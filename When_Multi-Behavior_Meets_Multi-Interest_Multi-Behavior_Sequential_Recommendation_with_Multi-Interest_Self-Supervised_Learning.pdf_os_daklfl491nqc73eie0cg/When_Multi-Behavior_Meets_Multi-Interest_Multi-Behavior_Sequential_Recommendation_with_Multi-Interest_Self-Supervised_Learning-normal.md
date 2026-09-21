@@ -1,0 +1,629 @@
+# When Multi-Behavior Meets Multi-Interest: Multi-Behavior Sequential Recommendation with Multi-Interest Self-Supervised Learning
+
+Binquan Wu, Yu Cheng, Haitao Yuan, Qianli Ma*
+
+School of Computer Science and Engineering, South China University of Technology, China cskyun_ng@mail.scut.edu.cn, chengyu991122@163.com, dhdocean@gmail.com qianlima@scut.edu.cn
+
+Abstract-Sequential Recommendation utilizes interaction history to uncover users' dynamic interest changes and recommend the most relevant items for their next interaction. In recent years, multi-behavior modeling and multi-interest modeling have been hot research topics. Although multi-behavior and multi-interest methods have strengths in their respective domains, both have limitations. Multi-behavior methods focus excessively on target behavior recommendation (i.e., purchase) without sufficiently leveraging auxiliary behavior interactions (i.e., click) to discern users' multi-faced interests, leading to suboptimal recommendation quality. Meanwhile, existing multi-interest methods overlook the distinct user interests behind multi-behavior when extracting interests, resulting in inaccurate interest modeling. Combining the two can not only facilitate sophisticated modeling of complex user interests but also deepen understanding of multi-behavior interactions, achieving synergistic effects. In this paper, we propose a novel approach called Multi-Interest Self-Supervised Learning (MISSL) that precisely unifies multi-behavior and multi-interest modeling to obtain more comprehensive and accurate user profiles. MISSL utilizes a hypergraph transformer network to extract behavior-specific and shared interests followed by multi-interest self-supervised learning to refine item and interest representations. Additionally, a behavior-aware training task is incorporated to enhance model stability during training. Extensive experiments on benchmark datasets demonstrate that MISSL outperforms baseline methods. The source code for MISSL is available at: https://github.com/qianlima-lab/MISSL.
+
+Index Terms-Recommender Systems, Sequential Recommendation, Self-Supervised Learning
+
+## I. INTRODUCTION
+
+In the digital age, recommendation systems play a pivotal role in mitigating the issue of information overload for users across a wide range of applications, such as e-commerce systems, news delivery services, and online retail platforms [2], [10], [45]. As users interact with items sequentially, the inherently temporal nature of user actions has brought sequential recommendation into the forefront of mainstream approaches [12], [14], [17], [33], [39].
+
+However, most of these existing works focused on single-behavior scenarios. In real-world industrial settings, user interaction behaviors are diverse and can be categorized into target behaviors (e.g., purchase) and auxiliary behaviors (e.g., click, fav, add-to-cart). These behaviors mutually influence, forming complex multi-behavior sequential structures. Moreover, the target behavior data is often sparse [26], [56], making it challenging for models to capture user interests under the target behavior accurately. Therefore, it is a significant challenge to address how to leverage auxiliary behavior interactions to enhance recommendation quality under the target behavior.
+
+![0_930_732_695_429_0.jpg](images/0_930_732_695_429_0.jpg)
+
+Figure 1. Toy example of approaching multi-behavior sequential recommendation in online commerce from the multi-interest perspective.
+
+To address the aforementioned challenges, significant advancements have recently been made in multi-behavior sequential recommendation research, with the emergence of several notable studies [23], [26], [47], [54], [56], [59]. These methods have developed effective information fusion modules to integrate the information from observable auxiliary behaviors. For instance, MBHT [54] utilizes hypergraph neural networks to capture high-order multi-behavior dependencies, while NextIP [26] incorporates cross-attention modules to integrate different behavior sub-sequence encoding. However, these methods only consider the recommendation problem at the item-level, and when shifting to the interest-level, several issues arise:
+
+(1) As shown in the Figure 1, a user interacts with various items ("watch", "laptop", ...) under multiple behaviors ("click", "purchase", ...) driven by different interests ("luxury", "electronic", ...). Ignoring interests, recommendation systems may fail to differentiate the relevance of different interactions and their importance across different behaviors. For example, the favorite watch and laptop reflect the interest in "electronics", which could prove valuable for predicting mouse purchase. Meanwhile, clicking on pants indicates an interest in "cloth", which is useful for predicting a t-shirt purchase. However, for the recommendation of a purchased mouse, clicked pants and purchased t-shirt may be noisy interactions because they reflect different underlying interests. Neglecting this aspect can lead to suboptimal recommendations quality and a less satisfying user experience.
+
+---
+
+*Corresponding author: Qianli Ma.
+
+---
+
+(2) From Figure 1, we can see that each behavior reflects either behavior-specific or shared interests. For instance, the "fav" behavior indicates the user's interest in "luxury" items, which is behavior-specific. Meanwhile, "click" and "purchase" behaviors signify interest in "cloth", a shared interest. Considering both "fav" and "purchase" interactions, we can infer the user also has a shared interest in "electronics". Therefore, the patterns of user interactions become extremely complex. For instance, as the example shows, after purchasing a mouse, the user leisurely browses through a fan. This interaction transition seems unusual and counterintuitive without considering the change in behavior type. In summary, the challenge stems from the changes in behaviors ("buy" \( \rightarrow \) "click") leading to shifts in interests ("electronic" → "just view"), complicating the interacted item transitions ("mouse" → "fan"). As a result, it impacts the learning process of the model.
+
+Currently, most existing multi-interest methods attempt to capture implicit users' interests to improve recommendation performance, which can be divided into two categories. The first category utilizes specific neural networks to integrate similar items, enabling the extraction of user interests [2], [19], [40]. The latter category involves initializing interest prototypes parameterized by vectors and allocating items to corresponding interests based on similarity to refine the em-beddings of interest [20], [22], [38]. However, they merely focus on single-behavior scenarios, which are limited when applied for multi-behavior recommendation due to the following key challenges: i) Due to the distinct semantics and contexts associated with different behaviors [8], as well as the coexistence of both behavior-specific and shared interests within each behavior [27], it is unsuitable for modeling interests in a unified manner. ii) Furthermore, we argue that the interest distributions for different behaviors are inconsistent, requiring the model to dynamically adjust its interest extraction strategy. iii) The absence of ground truth interest labels and the lack of interaction data for certain behaviors make it challenging to effectively guide interest learning and accurately model interests. iv) Additionally, these methods struggle to converge when learning the dynamic patterns of evolving interests across changing behavior types.
+
+In response to these limitations and challenges, we propose a novel approach called Multi-Interest Self-Supervised Learning (MISSL) with a behavior-aware training task, which addresses the multi-behavior sequential recommendation task with the modeling of multi-interest. To overcome the first two limitations, we introduce a behavior-aware multi-interest encoder built upon hypergraph transformer network [49], which is equipped with an adaptive sparsification attention mechanism. Specifically, MISSL first initializes behavior-specific and shared interest prototypes, which serve as hyperedges in the hypergraph transformer. It then conducts behavior-wise propagation between interests and items to refine the item and interest representations with distinct semantics. Importantly, the adaptive sparsification attention mechanism enables adaptive adjustment of the propagation strategy based on the data distribution by sparsifying the attention score matrix calculated during the propagation process. To address the third limitation, we propose a comprehensive self-supervised learning paradigm that includes intra-interest and inter-interest contrastive learning. The intra-interest self-supervised learning maximizes the agreement between items and their affiliated interests, which serves as an auxiliary task to guide the learning process of interests. Additionally, the inter-interest self-supervised learning transfers informative semantics from general shared interests, which benefit from being learned across all user behaviors with more data, to particular behavior-specific interests, mitigating the issue of data sparsity for certain behaviors. Furthermore, to overcome the last limitation, a behavior-aware training task is incorporated to stabilize and accelerate model convergence. This is achieved by simultaneously modeling evolving user interests and accounting for changing behavior patterns during training.
+
+To summarize, this work makes the following contributions:
+
+- We develop a novel model MISSL for the multi-behavior sequential recommendation, which models heterogeneous interests for different behaviors. Moreover, we introduce a comprehensive self-supervised learning paradigm at intra-interest and inter-interest levels to alleviate the challenges of lacking label and data sparsity.
+
+- We point out that the interaction evolving pattern is complex under the multi-behavior scenario. Therefore, we propose a behavior-aware training task to stabilize and speed up the model optimization at the training stage.
+
+- Extensive experiments on three real-world datasets demonstrate that MISSL outperforms various state-of-the-art recommendation methods. In addition, the elaborated model ablation study helps justify the individual impact of each component in performance improvement.
+
+## II. RELATED WORK
+
+## A. Sequential Recommendation
+
+Sequential Recommendation aims to predict the next item that a user will likely prefer based on their interaction history. Traditional studies rely on Markov chains to capture first-order item-to-item correlation based on the transition matrix [12], [33]. With the remarkable capability of deep learning in capturing complex sequential patterns, numerous deep recommendation models have been proposed. For example, GRU4Rec [14] utilizes GRU units to model the temporal dynamics of interaction sequences. Caser [39] employs a time convolutional neural network(TCN) to capture users' long-term and short-term interests for personalized recommendations. SASRec [17] and BERT4Rec [37] utilize self-attention mechanisms to improve computational efficiency and address the issue of information forgetting in long sequences.
+
+Inspired by research on multi-behavior general recommendation that utilizes auxiliary behavior data to enhance performance on sparse target behaviors [8], [16], [48], [50], [52], a multitude of multi-behavior sequential recommendations have been developed to explore the potential of multi-behavior data in a sequential recommendation. RIB [59] and BINN [23] utilize recurrent neural networks to incorporate the behavior's information from the micro behavior perspective. Based on SASRec, MB-STR [56] redesigns the attention mechanism to model multi-behavior patterns more comprehensively. In addition, with the development of a hypergraph neural network, MBHT [54] utilized hypergraph to capture the tetradic or higher-order multi-behavior dependencies over time. However, while these multi-behavior sequential recommendation methods focus on modeling correlations between behaviors at the item-level, they often overlook the underlying user interests associated with each behavior. To fill this gap, this work seeks a new multi-behavior recommender system that integrates multi-interest learning with heterogeneous semantics under a hypergraph transformer architecture.
+
+## B. Multi-Interest Recommendation
+
+Several state-of-the-art methods have been proposed for multi-interest modeling to enhance recommendation performance. These methods can be classified into two categories. The first category focuses on utilizing advanced neural networks to integrate similar items and capture user interests. For instance, MIND [19], ComiRec [2] and MGNM [40] employ capsule networks [34] to integrate similar items and extract interest representations. The second category first initializes interest prototypes as vectors and then allocates items to relevant interests based on similarity measures to refine embeddings. Methods like ISRec [20], SINE [38], and HIDE [22] follow this prototype refinement approach. For example, SINE first initializes a large interest prototype pool and then activates the interest based on the similarity with interaction history to recommend. Despite the progress made by these methods, they still face certain limitations when it comes to addressing multi-behavior scenarios. Different from them, MISSL can capture heterogeneous interests by initializing behavior-specific and shared interest prototypes and devising behavior-wise interest extraction.
+
+## C. Self-Supervised Learning for Sequential Recommendation
+
+To alleviate the lack of label supervision, some sequential recommendation models have adopted contrastive learning to explore and utilize self-supervised signals from unlabeled data. These systems heavily rely on data corruption techniques to construct contrastive representation views for achieving embedding agreement. For example, CL4SRec [51] randomly corrupts sequences using cropping, masking, and reordering to construct contrastive views. To generate high-quality contrastive pairs for better performance, CoSeRec [25] carefully designs "substitution" and "insertion" operations to generate better contrastive views. DuoRec [32] introduces supervised positive sampling to obtain high-quality positive pairs. Furthermore, some approaches like MAERec [55] and DCRec [53] aim to automate the self-supervised learning process to enhance model performance. Inspired by these prior studies, MISSL leverages the advantages of self-supervised learning to learn users' interests more accurately.
+
+## III. PRELIMINARIES
+
+Suppose we have a multi-behavior sequential recommendation scenario with a user set \( \mathcal{U}\left( {{u}_{i} \in  \mathcal{U}}\right) \) , an item set \( \mathcal{V}\left( {{v}_{j} \in  \mathcal{V}}\right) \) and a behavior set \( \mathcal{B}\left( {{b}_{k} \in  \mathcal{B}}\right) \) , where \( \left| \mathcal{U}\right| \) , \( \left| \mathcal{V}\right| \) and \( \left| \mathcal{B}\right| \) denote the number of users, items and behavior types respectively. Then, we are given the behavior-aware interaction sequence of the most recent \( T \) timestamp which is sorted chronologically \( {\mathcal{S}}_{i} = \left\{  {\left( {{v}_{i, t},{b}_{i, t}}\right)  \mid  {v}_{i, t} \in  \mathcal{V},{b}_{i, t} \in  }\right. \; \left. {\mathcal{B},1 \leq  t \leq  T}\right\} \) for \( {u}_{i}\left( {{u}_{i} \in  \mathcal{U}}\right) \) , where \( \left( {{v}_{i, t},{b}_{i, t}}\right) \) indicates that \( {u}_{i} \) has interacted with \( {v}_{i, t} \) under \( {b}_{i, t} \) behavior at the \( t \) -th timestamp, such as purchase and add-to-cart in e-commerce platforms. Following [53], [56], if the original sequence length is less than \( T \) , we pad the sequence with0vector to ensure a length of \( T \) . Furthermore, we denote the items interacted by \( {u}_{i} \) under different behaviors as \( {\mathcal{V}}_{i} = \left\{  {{\mathcal{V}}_{i}^{1},{\mathcal{V}}_{i}^{2},\ldots ,{\mathcal{V}}_{i}^{\left| \mathcal{B}\right| }}\right\} \) , where \( {\mathcal{V}}_{i}^{k} = \left\{  {{v}_{i, t} \mid  {b}_{i, t} = {b}_{k}}\right\} \) represents the interacted items of behavior \( k,\left| {\mathcal{V}}_{i}^{k}\right| \) denotes the amount of behavior \( k \) data.
+
+Task Description. With the above symbols, we define the task of multi-behavior sequential recommendation as: Input the interaction sequence \( {\mathcal{S}}_{i} \) . Output a trained model \( \xi \left( \cdot \right) \) that estimates the probability that user \( {u}_{i} \) interacts with item \( {v}_{j} \) under target behavior at the \( T + 1 \) timestamp by \( {\widehat{y}}_{i, j} = \xi \left( {{\mathcal{S}}_{i},{v}_{j}}\right) \) .
+
+## IV. METHODOLOGY
+
+In this section, we present the details of MISSL which comprises four key components: i) Behavior-Aware Embedding Layer that parameterizes the items and interests with heterogeneous semantic information. ii) Behavior-Aware Multi-Interest Encoder which distils the behavior-specific and shared interests for multiple behaviors separately based on a hypergraph transformer neural network. iii) Intra-Interest Self-Supervised Learning involves maximizing the agreement between items and their affiliated interests using the InfoNCE loss, while Inter-Interest Self-Supervised Learning regards item-wise behavior-specific and shared interest as positive pairs to conduct contrastive learning. iv) Behavior-Aware Training that incorporates the behavior generic into the model-optimized objective for the sequential recommendation. The overall framework of MISSL is shown in Figure 2.
+
+## A. Behavior-Aware Embedding Layer
+
+1) Context Embedding Layer: Firstly, to inject multi-behavior context information into MISSL during the interest encoding stage, we design a behavior-aware context embedding layer that simultaneously integrates item information, behavior information, and temporal signals. Thus, given an item \( {v}_{j} \) , we obtain the behavior-aware hidden representation \( {\mathbf{h}}_{j} \in  {\mathbb{R}}^{d} \) as follows:
+
+\[
+{\mathbf{h}}_{j} = {\mathbf{e}}_{j} \oplus  {\mathbf{b}}_{j} \oplus  {\mathbf{p}}_{j} \tag{1}
+\]
+
+![3_221_212_1326_654_0.jpg](images/3_221_212_1326_654_0.jpg)
+
+Figure 2. The model flow of MISSL. The behavior-aware embedding layer first encodes items and interests, which are subsequently refined by the multi-interest encoder to get \( \widehat{\mathbf{H}} \) and \( \widehat{\mathbf{C}} \) which engage in multi-interest ssl. During the behavior-aware training, MISSL leverages an item-behavior transformer with a cross-attention mechanism to encode the item and behavior sequences, followed by optimization using the behavior-aware training task.
+
+where \( \oplus \) is an element-wise add operation, \( {\mathbf{e}}_{j} \in  {\mathbb{R}}^{d} \) represents the initial embedding of the item, \( {\mathbf{b}}_{j} \in  {\mathbb{R}}^{d} \) denotes the embedding corresponding to the user's interaction behavior, and \( {\mathbf{p}}_{j} \in  {\mathbb{R}}^{d} \) represents the learnable positional embedding, which is widely adopted in sequence modeling [7], [37], capturing the temporal sequence information of different interacted items. We let \( \mathbf{E} \in  {\mathbb{R}}^{T \times  d},\mathbf{B} \in  {\mathbb{R}}^{T \times  d} \) , and \( \mathbf{P} \in  {\mathbb{R}}^{T \times  d} \) represent the initial item embedding matrix, behavior embedding matrix, and position embedding matrix, respectively, where \( T \) represents the sequence length and \( d \) represents the embedding dimension. By obtaining the behavior-aware embedding for the interaction sequence \( {\mathcal{S}}_{i} \) , we can obtain the behavior-aware item embedding matrix \( \mathbf{H} \in  {\mathbb{R}}^{T \times  d} \) . Furthermore, we denote the behavior-aware representation matrix under behavior \( k \) as \( {\mathbf{H}}^{k} \in  {\mathbb{R}}^{\left| {\mathcal{V}}_{i}^{k}\right|  \times  d} \) .
+
+2) Interest Embedding Layer: Since different behaviors have their own semantics and context [8], the interests behind each behavior also have distinct semantics. Therefore, we construct an independent behavior-specific interest prototype embedding matrix for behavior \( k : {\mathbf{C}}^{k,{spe}} = \left\lbrack  {{\mathbf{c}}_{1}^{k,{spe}},\ldots ,{\mathbf{c}}_{M}^{k,{spe}}}\right\rbrack   \in \; {\mathbb{R}}^{M \times  d} \) , where there are M types of interest per behavior and each interest is represented as \( d \) dimensional vector \( {\mathbf{c}}_{i}^{k,{spe}} \) . Also, we denote the behavior-shared interest prototype embedding matrix as \( {\mathbf{C}}^{sha} = \left\lbrack  {{\mathbf{c}}_{1}^{sha},\ldots ,{\mathbf{c}}_{M}^{sha}}\right\rbrack   \in  {\mathbb{R}}^{M \times  d} \) . Finally, we obtain the interest prototype embedding matrix \( \mathbf{C} = \left\lbrack  {{\mathbf{C}}^{spe},{\mathbf{C}}^{sha}}\right\rbrack \) , which will be regarded as embedding of hyperedge in the follow-up.
+
+## B. Behavior-Aware Multi-Interest Encoder
+
+Though existing hypergraph-based neural networks effectively model user's interests in single-behavior scenarios [22], [35], they are hard to expand to multi-behavior scenarios because i) There exists behavior-specific and shared interests, which exhibits heterogeneity; ii) The amount of interacted items varies among different behaviors (e.g., purchased items is much fewer than clicked items), which complicates the interests modeling. To address it, built upon the hypergraph transformer [49], we propose a novel behavior-aware multi-interest encoder, which captures behavior-specific and shared interests through behavior-aware information propagation and mitigates the impact of data imbalance on interest modeling with adaptive sparsification attention mechanism.
+
+1) Behavior-Aware Item-to-Interest Propagation: We conduct the behavior-aware information propagation following the Transformer-like multi-head attention mechanism from item nodes to interest hyperedge to distil the representations of behavior-specific interest. The propagation process for behavior \( k \) can be formally presented as follows:
+
+\[
+{\widetilde{\mathbf{C}}}^{k,\text{ spe }} = \left( {{\overline{\mathbf{C}}}^{k,\text{ spe },1}\begin{Vmatrix}{\overline{\mathbf{C}}}^{k,\text{ spe },2}\end{Vmatrix}\ldots \parallel {\overline{\mathbf{C}}}^{k,\text{ spe }, H}}\right) {\mathbf{W}}_{k}^{{D}_{1}}
+\]
+
+\[
+{\overline{\mathbf{C}}}^{k,{spe}, h} = \eta \left( {\operatorname{softmax}\left( \frac{{\mathbf{C}}^{k,{spe}}{\mathbf{W}}_{h}^{Q, k}{\left( {\mathbf{H}}^{k}{\mathbf{W}}_{h}^{K, k}\right) }^{ \intercal  }}{\sqrt{d/h}}\right) }\right) {\mathbf{H}}^{k}{\mathbf{W}}_{h}^{V, k}
+\]
+
+(2)
+
+where \( {\widetilde{\mathbf{C}}}^{k,{spe}} \in  {\mathbb{R}}^{M \times  d} \) denotes the refined embedding of the behavior-specific interest hyperedge for the behavior \( k \) , it is calculated by the concatenation of \( {\overline{\mathbf{C}}}^{k,{spe}, h} \in  {\mathbb{R}}^{K \times  d/h} \) , which is denoted by \( \left( {\cdot \parallel  \cdot  }\right) .{\mathbf{W}}_{h}^{Q, k},{\mathbf{W}}_{h}^{K, k},{\mathbf{W}}_{h}^{V, k} \in  {\mathbb{R}}^{d \times  d/h} \) are head-specific query, key and value projection matrices, and \( {\mathbf{W}}_{k}^{{D}_{1}} \) is the output transformation matrix. \( \eta \left( \cdot \right) \) denotes the adaptive sparsification operator, which will be elaborated on later. For the shared interests, we conduct the propagation between all of the interacted item embeddings \( \mathbf{H} \) and shared interest hyperedges \( {\mathbf{C}}^{sha} \) to obtain \( {\widetilde{\mathbf{C}}}^{sha} \) in the same way.
+
+In order to explore the intricate non-linear feature interactions among the interests, we enhance the encoder by incorporating two-layer hierarchical hypergraph neural networks for both behavior-specific and shared interests. Specifically, the final interest hyperedge embeddings are calculated as:
+
+\[
+{\widehat{\mathbf{C}}}^{\left( \cdot \right) } = {\mathrm{{HHGN}}}^{2}\left( {\widetilde{\mathbf{C}}}^{\left( \cdot \right) }\right) ;\;\mathrm{{HHGN}}\left( \mathbf{X}\right)  = \sigma \left( {\mathcal{H} \cdot  \mathbf{X} + \mathbf{X}}\right) \tag{3}
+\]
+
+where \( {\widehat{\mathbf{C}}}^{\left( \cdot \right) },{\widetilde{\mathbf{C}}}^{\left( \cdot \right) } \in  {\mathbb{R}}^{K \times  d} \) represent the final and original interest hyperedge embeddings, and the superscript (·) means the calculation will be conducted on \( \left( {k,{spe}}\right) \) or \( \left( {sha}\right) \) hyperedges respectively. \( {\mathrm{{HHGN}}}^{2}\left( \cdot \right) \) denotes two-layer hierarchical hyper-graph network (HHGN). The HHGN is equipped with a trainable parametric matrix \( \mathcal{H} \in  {\mathbb{R}}^{K \times  d} \) , which defines the interest-wise relations. To capture non-linear relation modeling, an activation function \( \operatorname{ReLU}\left( \cdot \right) \) , denoted as \( \sigma \left( \cdot \right) \) , is introduced in our model. Furthermore, we incorporate a residual connection to facilitate gradient propagation.
+
+2) Behavior-Aware Interest-to-Item Propagation: As an interaction may be motivated by multiple interests, after refining the interest hyperedge and obtaining \( {\widehat{\mathbf{C}}}^{\left( \cdot \right) } \) , MISSL further propagates the information from interest hyperedges to item nodes so as to fuse interest hyperedges as implicit user interest representations reflected by interacted items, where the attention mechanism can measure the degree of influence of interest for each item. Furthermore, to endow our behavior-aware interest-to-item propagation with the capability of jointly attending the semantics of behavior-specific and shared interest, we first concatenate the final interest hyperedge embedding obtained at the early stage \( {\widehat{\mathbf{C}}}^{k} = \left\lbrack  {{\widehat{\mathbf{C}}}^{\left( k, spe\right) }\parallel {\widehat{\mathbf{C}}}^{\left( sha\right) }}\right\rbrack \) , and then conduct the behavior \( k \) interest-to-item propagation:
+
+\[
+{\widetilde{\mathbf{H}}}^{k} = \left( {{\overline{\mathbf{H}}}^{k,1}\begin{Vmatrix}{\overline{\mathbf{H}}}^{k,2}\end{Vmatrix}\ldots \parallel {\overline{\mathbf{H}}}^{k, H}}\right) {\mathbf{W}}_{k}^{{D}_{2}}
+\]
+
+\[
+{\overline{\mathbf{H}}}^{k, h} = \operatorname{softmax}\left( \frac{{\mathbf{H}}^{k}{\mathbf{W}}_{h}^{{Q}^{\prime }, k}{\left( {\widehat{\mathbf{C}}}^{k}{\mathbf{W}}_{h}^{{K}^{\prime }, k}\right) }^{ \intercal  }}{\sqrt{d/h}}\right) {\widehat{\mathbf{C}}}^{k}{\mathbf{W}}_{h}^{{V}^{\prime }, k} \tag{4}
+\]
+
+where \( {\widetilde{\mathbf{H}}}^{k} \in  {\mathbb{R}}^{\left| {\mathcal{V}}_{i}^{k}\right|  \times  d} \) denotes the refined embedding of the interacted items under behavior \( k \) , and we denote all of the item embedding as \( \widetilde{\mathbf{H}} = \left\lbrack  {{\widetilde{\mathbf{H}}}^{1},{\widetilde{\mathbf{H}}}^{2},\ldots ,{\widetilde{\mathbf{H}}}^{K}}\right\rbrack   \in  {\mathbb{R}}^{T \times  d} \) . \( {\mathbf{W}}_{h}^{{Q}^{\prime }, k},{\mathbf{W}}_{h}^{{K}^{\prime }, k},{\mathbf{W}}_{h}^{{V}^{\prime }, k} \in  {\mathbb{R}}^{d \times  d/h} \) denotes the query, key and value projection matrices in the attention mechanism, and \( {\mathbf{W}}_{k}^{{D}_{2}} \) is the output transformation matrix.
+
+3) Adaptive Sparsification Attention: The original reasons behind the proposal of adaptive sparsification attention can be summarized into two main points:
+
+- Convex assumption. The relationship between interaction data amount and interest diversity growth likely follow a monotonically increasing convex function, i.e., diversity increases with more data but at a decelerating rate due to saturating interests.
+
+- Effectiveness of sparse attention. Recent research on NLP and time series suggests that dense attention is unnecessary. By attending to the most relevant \( k \) elements, models can capture essential information effectively [1], [18], [58].
+
+Therefore, we designed an adaptive sparsification mechanism to simulate this scenario, effectively reducing the impact of irrelevant item noise when propagating information between the items and interests. Specifically, after obtaining the attention score matrix at the information propagation stage, the adaptive sparsification attention mechanism retains only the top- \( {n}_{k} \) scores based on the amount of behavior \( k \) interaction data for the specific behavior scenario, i.e., \( {n}_{k} = f\left( \left| {\mathcal{V}}_{i}^{k}\right| \right) \) , setting the rest of the scores to 0 . Here, \( f\left( \cdot \right) \) is a monotonically increasing convex function. The specific formula is as follows:
+
+\[
+f\left( x\right)  = \left\{  \begin{array}{ll} x & \text{ if }0 \leq  x. \\  \min \left( {t\left\lfloor  {{\log }_{\frac{T}{t}}\frac{x}{t} + 1}\right\rfloor  ,{2t} - 1}\right) & \text{ if }x \geq  t \end{array}\right. \tag{5}
+\]
+
+where \( t \) is a hyperparameter to harmonize the decelerating rate. Compared with other sparsification mechanisms, e.g., ϵ- sparseness [3], absolute threshold strategy [6], relative ranking strategy [29], adaptive sparsification mechanism can perceive the data distribution and perform sparsification accordingly, making it well-suited for the multi-behavior scenario. To enhance the robustness of the adaptive sparsification attention, we incorporate the dropout operation [36] on the attention score matrix prior to the sparsification process.
+
+4) Learnable Complex Interest Modeling: Building upon the salient interests captured by the learned behavior-aware multi-interest encoder, we propose to extend the encoding of behavioral interests by stacking multiple encoder layers. In this manner, MISSL gains the ability to capture complex interests at multiple levels [40]. Rather than simply summing the outputs from all layers, we employ an adaptive fusion mechanism to integrate different level interests in a context-aware manner dynamically. Specifically, we introduce an attention layer that learns explicit importance weights for each layer. Formally, the aggregation procedure can be outlined as follows: Firstly, taking the item embedding matrix \( {\widetilde{\mathbf{H}}}_{l - 1} = \; \left\lbrack  {{\widetilde{\mathbf{H}}}_{l - 1}^{1},{\widetilde{\mathbf{H}}}_{l - 1}^{2},\ldots ,{\widetilde{\mathbf{H}}}_{l - 1}^{K}}\right\rbrack \) and interest hyperedge embedding matrix \( {\widehat{\mathbf{C}}}_{l - 1} = \left\lbrack  {{\widehat{\mathbf{C}}}_{l - 1}^{1,{spe}},{\widehat{\mathbf{C}}}_{l - 1}^{2,{spe}},\ldots ,{\widehat{\mathbf{C}}}_{l - 1}^{K,{spe}},{\widehat{\mathbf{C}}}_{l - 1}^{sha}}\right\rbrack \) in the \( \left( {l - 1}\right) \) - th iteration as input, MISSL recursively applies the behavior-aware multi-interest encoding (denoted by InterestEnc(·)):
+
+\[
+{\widetilde{\mathbf{H}}}_{l},{\widehat{\mathbf{C}}}_{l} = \operatorname{InterestEnc}\left( {{\widetilde{\mathbf{H}}}_{l - 1},{\widehat{\mathbf{C}}}_{l - 1}}\right) \tag{6}
+\]
+
+and then, MISSL employs an attention mechanism to merge all layers:
+
+\[
+{\alpha }_{l}^{h} = \frac{\exp \left( {{\widetilde{\mathbf{H}}}_{l} \cdot  {\left( {\mathbf{a}}_{l}^{h}\right) }^{\top }}\right) }{\mathop{\sum }\limits_{{n = 1}}^{L}\exp \left( {{\widetilde{\mathbf{H}}}_{n} \cdot  {\left( {\mathbf{a}}_{n}^{h}\right) }^{\top }}\right) };\;{\alpha }_{l}^{c} = \frac{\exp \left( {{\widehat{\mathbf{C}}}_{l} \cdot  {\left( {\mathbf{a}}_{l}^{c}\right) }^{\top }}\right) }{\mathop{\sum }\limits_{{n = 1}}^{L}\exp \left( {{\widehat{\mathbf{C}}}_{n} \cdot  {\left( {\mathbf{a}}_{n}^{c}\right) }^{\top }}\right) }
+\]
+
+\[
+\widehat{\mathbf{H}} = \mathop{\sum }\limits_{{n = 1}}^{L}{\alpha }_{n}^{h}{\widetilde{\mathbf{H}}}_{l};\;\widehat{\mathbf{C}} = \mathop{\sum }\limits_{{n = 1}}^{L}{\alpha }_{n}^{c}{\widehat{\mathbf{C}}}_{n} \tag{7}
+\]
+
+where \( {\mathbf{a}}_{l}^{h},{\mathbf{a}}_{l}^{c} \in  {\mathbb{R}}^{1 \times  d} \) are trainable parameters.
+
+## C. Multi-Interest Self-Supervised Learning
+
+This section describes how we enable MISSL with the multi-interest supervision under a behavior-aware interest encoder to augment the item and interest representations with lacking supervision signals and sparse interaction data.
+
+1) Intra-Interest Self-Supervised Learning: After obtaining the interest representations, the lack of ground truth interest labels limits effective interest learning and, worse still, implicitly introduces noise during information propagation. Hence, inspired by [5], [21], we devise our intra-interest contrastive learning by maximizing the agreement between the item and affiliated interest. Specifically, based on the attention score matrix calculated by (2), we define the interest with the highest score as the affiliated interest for each item, denoted as \( {\widehat{\mathbf{c}}}_{t}^{k,\text{ spe }} \) and \( {\widehat{\mathbf{c}}}_{t}^{\text{ sha }} \) . We take the item and its affiliated interests as the positive pairs \( \left( {{\mathbf{h}}_{t}^{k},{\widehat{\mathbf{c}}}_{t}^{k,\text{ spe }}}\right) ,\left( {{\mathbf{h}}_{t}^{k},{\widehat{\mathbf{c}}}_{t}^{\text{ sha }}}\right) \) and treat other interests as negative pairs. In this way, our model learns discriminative representations by contrasting the positive and negative instances. We formally define our contrastive loss with the InfoNCE [30] as:
+
+\[
+{\mathcal{L}}_{\text{ intra }}^{k} = \mathop{\sum }\limits_{{{v}_{i, t} \in  {\mathcal{V}}_{i}^{k}}}\left( {-\log \frac{\exp \left( {\phi \left( {{\mathbf{h}}_{t}^{k},{\widehat{\mathbf{c}}}_{t}^{k,\text{ spe }}}\right) /\tau }\right) }{\mathop{\sum }\limits_{{m = 1}}^{M}\exp \left( {\phi \left( {{\mathbf{h}}_{t}^{k},{\widehat{\mathbf{c}}}_{m}^{k,\text{ spe }}}\right) /\tau }\right) }}\right.
+\]
+
+\[
+\left. {-\log \frac{\exp \left( {\phi \left( {{\mathbf{h}}_{t}^{k},{\widehat{\mathbf{c}}}_{t}^{sha}}\right) /\tau }\right) }{\mathop{\sum }\limits_{{m = 1}}^{M}\exp \left( {\phi \left( {{\mathbf{h}}_{t}^{k},{\widehat{\mathbf{c}}}_{m}^{sha}}\right) /\tau }\right) }}\right) \tag{8}
+\]
+
+where \( \phi \left( \cdot \right) \) denotes the cosine similarity function and \( \tau \) denotes the tunable temperature hyper-parameter to adjust the scale for softmax. Therefore, the ultimate intra-interest contrastive loss is the sum of the item and affiliated interest pairs under each behavior as \( {\mathcal{L}}_{\text{ intra }} = {\mathcal{L}}_{\text{ intra }}^{1} + {\mathcal{L}}_{\text{ intra }}^{2} + \ldots  + {\mathcal{L}}_{\text{ intra }}^{\bar{K}} \) .
+
+2) Inter-Interest Self-Supervised Learning: To alleviate the lack of guidance from ground truth interest labels, intra-interest self-supervised learning enhances the item's alignment with the corresponding interests to guide the learning process. However, insufficient interaction data for certain behaviors results in inaccurate learning of interests. This limitation hinders the model's ability to fully capture and understand the diverse interests exhibited by users. To tackle it, we have innovatively proposed inter-interest self-supervised learning between behavior-specific and shared interests to enable knowledge transfer from general shared interests to particular behavior-specific interests, which can mitigate the data sparsity issue. Specifically, we take item-wise behavior-specific and shared interests under behavior \( k \) as positive pairs \( \left( {{\widehat{\mathbf{c}}}_{t}^{k,{spe}},{\widehat{\mathbf{c}}}_{t}^{sha}}\right) \) , and treat the others as negative pairs. We formally define our contrastive loss as:
+
+\[
+{\mathcal{L}}_{\text{ inter }}^{k} = \mathop{\sum }\limits_{{{v}_{i, t} \in  {\mathcal{V}}_{i}^{k}}} - \log \frac{\exp \left( {\phi \left( {{\widehat{\mathbf{c}}}_{t}^{sha},{\widehat{\mathbf{c}}}_{t}^{k,{spe}}}\right) /\tau }\right) }{\mathop{\sum }\limits_{{m = 1}}^{M}\exp \left( {\phi \left( {{\widehat{\mathbf{c}}}_{t}^{sha},{\widehat{\mathbf{c}}}_{m}^{k,{spe}}}\right) /\tau }\right) }
+\]
+
+(9)
+
+Therefore, the final inter-interest contrastive loss is the sum of each pair of behavior-specific interest and shared interest as \( {\mathcal{L}}_{\text{ inter }} = {\mathcal{L}}_{\text{ inter }}^{1} + {\mathcal{L}}_{\text{ inter }}^{2} + \ldots  + {\mathcal{L}}_{\text{ inter }}^{K}. \)
+
+## D. Behavior-Aware Training
+
+There is another problem that needs to be solved. Due to the fact that different behaviors reflect distinct user interests, the patterns of user interactions become extremely complex. While previous have succeeded in modeling heterogeneous dependencies across behaviors, they overlooked this particular issue, destabilising the model's training. This section will introduce the proposed behavior-aware training task, which alleviates this challenge.
+
+1) Behavior-Aware Training Task: In the MISSL, we address this limitation by redesigning the recommendation task and introducing a behavior generic into the objective function, which can alleviate the unstable training problem to a certain extent. The general goal of sequential recommendation can be formulated as finding the optimal encoder parameter \( \theta \) that maximizes the log-likelihood function of the expected next items of a given sequence \( {\mathcal{S}}_{i} \) at every timestamp [17],[37]:
+
+\[
+{\theta }^{ * } = \underset{\theta }{\arg \max }\mathop{\sum }\limits_{{t = 2}}^{T}\ln P\left( {v}_{i, t}\right) \tag{10}
+\]
+
+where \( {v}_{i, t} \) denotes the target item at \( t \) timestamp. In MISSL, we devise a simple but efficient objective function. The specific function is as follows:
+
+\[
+{\theta }^{ * } = \underset{\theta }{\arg \max }\mathop{\sum }\limits_{{t = 2}}^{T}\ln P\left( {{v}_{i, t},{b}_{i, t}}\right) \tag{11}
+\]
+
+where \( {b}_{i, t} \) denotes the target behavior at \( t \) timestamp. To facilitate model learning, we further decompose the objective function as follows:
+
+\[
+\log P\left( {{v}_{i, t},{b}_{i, t}}\right)  = \underset{\text{ next item pred. }}{\underbrace{\log P\left( {v}_{i, t}\right) }} + \underset{\text{ next behavior pred. }}{\underbrace{\log P\left( {b}_{i, t}\right) }} + \underset{\text{ mutual info. }}{\underbrace{\operatorname{PMI}\left( {{v}_{i, t},{b}_{i, t}}\right) }}
+\]
+
+(12)
+
+where \( \operatorname{PMI}\left( {{v}_{i, t},{b}_{i, t}}\right)  \triangleq  \log \frac{P\left( {{v}_{i, t},{b}_{i, t}}\right) }{P\left( {v}_{i, t}\right) P\left( {b}_{i, t}\right) } \) . The decomposed objective function consists of three terms. The first term aims to discover dynamic patterns of user interests, the second term aims to discover patterns of user behavior changes, and the third term aims to capture the correlation between dynamic interest patterns and behavior change patterns. For the first two terms, cross-entropy functions can be constructed for optimization. As for the third term, following [11], [24], [30], MISSL maximizes the mutual information term between \( {v}_{i, t} \) and \( {b}_{i, t} \) by maximizing its lower bound InfoNCE [30], we formally define our loss as follows:
+
+1) Next Item Prediction Objective:
+
+\[
+{\mathcal{L}}_{\text{ item }} = \frac{1}{T}\mathop{\sum }\limits_{{t = 2}}^{T} - \log \left( \frac{\exp \left( {{\widehat{\mathbf{e}}}_{i, t} \cdot  {\mathbf{e}}_{i, t}}\right) }{\mathop{\sum }\limits_{{{v}_{j} \in  \mathcal{V}}}\exp \left( {{\widehat{\mathbf{e}}}_{i, t} \cdot  {\mathbf{e}}_{j}}\right) }\right) \tag{13}
+\]
+
+where \( {\mathbf{e}}_{i, t} \) denotes the embedding of the ground truth target item. \( {\widehat{\mathbf{e}}}_{i, t} \) denotes the embedding of the hypothesis target item obtained by the Item-Behavior Transformer, which will be discussed later.
+
+2) Next Behavior Prediction Objective:
+
+\[
+{\mathcal{L}}_{\text{ beh }} = \frac{1}{T}\mathop{\sum }\limits_{{t = 2}}^{T} - \log \left( \frac{\exp \left( {{\widehat{\mathbf{b}}}_{i, t} \cdot  {\mathbf{b}}_{i, t}}\right) }{\mathop{\sum }\limits_{{{b}_{j} \in  \mathcal{B}}}\exp \left( {{\widehat{\mathbf{b}}}_{i, t} \cdot  {\mathbf{b}}_{j}}\right) }\right) \tag{14}
+\]
+
+where \( {\mathbf{b}}_{i, t} \) denotes the embedding of the target behavior. \( {\widehat{\mathbf{b}}}_{i, t} \) denotes the embedding of the hypothesis target behavior obtained by the Item-Behavior Transformer, which will be discussed later.
+
+3) Mutual Information Objective:
+
+\[
+{\mathcal{L}}_{mi} = \frac{1}{T}\mathop{\sum }\limits_{{t = 2}}^{T} - \log \frac{\exp \left( {\phi \left( {{\widehat{\mathbf{e}}}_{i, t},{\widehat{\mathbf{b}}}_{i, t}}\right) }\right) }{\mathop{\sum }\limits_{{{\mathcal{S}}_{k} \in  \mathcal{S}}}\exp \left( {\phi \left( {{\widehat{\mathbf{e}}}_{i, t},{\widehat{\mathbf{b}}}_{k, t}}\right) }\right) } \tag{15}
+\]
+
+where \( \mathcal{S} \) represents all interaction sequences from the same batch, and the ultimate learning objective of behavior-aware training task is the combination of \( {\mathcal{L}}_{\text{ item }},{\mathcal{L}}_{\text{ beh }} \) and \( {\mathcal{L}}_{\text{ mi }} \) , s.t.,
+
+\[
+{\mathcal{L}}_{\text{ rec }} = {\lambda }_{1}{\mathcal{L}}_{\text{ item }} + {\lambda }_{2}{\mathcal{L}}_{\text{ beh }} + {\lambda }_{3}{\mathcal{L}}_{\text{ mi }} \tag{16}
+\]
+
+where \( {\lambda }_{1},{\lambda }_{2} \) and \( {\lambda }_{3} \) is tunable hyper-parameters balancing the importance of each loss.
+
+2) Item-Behavior Transformer: Jointly learning the item change patterns (13) and behavior change patterns (14) is difficult and requires careful design due to the clear difference between them [28]. For example, while a user may typically add a product to the cart after reading its comments or purchase it after adding it to the cart, this cascading relation does not exist in item sequence. Therefore, it's inappropriate to learn them with the same interaction function. Here, we propose an Item-Behavior Transformer that captures both patterns separately with two distinct encoders and models their interplay with cross-attention mechanism [4], [44]. Specifically, we first represent the item sequence and behavior sequence respectively as \( {\mathbf{H}}^{\text{ ite }} = \widehat{\mathbf{H}} \oplus  \mathbf{P} \in  {\mathbb{R}}^{T \times  d} \) and \( {\mathbf{H}}^{\text{ beh }} = \mathbf{B} \oplus  \mathbf{P} \in  {\mathbb{R}}^{T \times  \bar{d}} \) , where \( \widehat{\mathbf{H}} \) is obtained at (7) and \( \oplus \) represents the element-wise add operation. Then, utilizing two distinct encoders, MISSL encodes the item and behavior sequences respectively and employs a cross-attention module to learn how they interact. The process can be formally presented as follows:
+
+\[
+\widehat{\mathbf{E}} = \operatorname{softmax}\left( \frac{{\mathbf{H}}^{beh} \circ  {\mathbf{W}}^{{Q}_{b}}{\left( {\mathbf{H}}^{ite} \circ  {\mathbf{W}}^{{K}_{i}}\right) }^{\top }}{\sqrt{d/h}}\right) {\mathbf{H}}^{ite} \circ  {\mathbf{W}}^{{V}_{i}}
+\]
+
+\[
+\widehat{\mathbf{B}} = \operatorname{softmax}\left( \frac{{\mathbf{H}}^{ite} \circ  {\mathbf{W}}^{{Q}_{i}}{\left( {\mathbf{H}}^{beh} \circ  {\mathbf{W}}^{{K}_{b}}\right) }^{\top }}{\sqrt{d/h}}\right) {\mathbf{H}}^{beh} \circ  {\mathbf{W}}^{{V}_{b}} \tag{17}
+\]
+
+where \( {\mathbf{W}}^{{Q}_{i}},{\mathbf{W}}^{{K}_{i}},{\mathbf{W}}^{{V}_{i}} \in  {\mathbb{R}}^{K \times  d \times  d} \) denotes the query, key, and value projection matrix from item side transformer, \( {\mathbf{W}}^{{Q}_{b}},{\mathbf{W}}^{{K}_{b}},{\mathbf{W}}^{{V}_{b}} \in  {\mathbb{R}}^{K \times  d \times  d} \) denotes the query, key, and value projection matrix from behavior side transformer. \( \circ \) denotes behavior-wise multiplication, meaning items for different behaviors correspond to a distinct mapping. This allows the unique semantics associated with each behavior to be captured. After that, MISSL conducts the feed-forward to inject the nonlinearity:
+
+\[
+\widehat{\mathbf{E}} = \operatorname{ReLU}\left( {\widehat{\mathbf{E}} \circ  {\mathbf{W}}_{ite}^{{D}_{1}} + {\mathbf{b}}_{ite}^{1}}\right)  \circ  {\mathbf{W}}_{ite}^{{D}_{2}} + {\mathbf{b}}_{ite}^{2}
+\]
+
+\[
+\widehat{\mathbf{B}} = \operatorname{ReLU}\left( {\widehat{\mathbf{B}} \circ  {\mathbf{W}}_{beh}^{{D}_{1}} + {\mathbf{b}}_{beh}^{1}}\right)  \circ  {\mathbf{W}}_{beh}^{{D}_{2}} + {\mathbf{b}}_{beh}^{2} \tag{18}
+\]
+
+In our feed-forward module, we utilize two layers of non-linear transformation with intermediate non-linear activation ReLU(·). In addition, \( {\mathbf{W}}_{ite}^{{D}_{1}},{\mathbf{W}}_{ite}^{{D}_{2}},{\mathbf{W}}_{beh}^{{D}_{1}},{\mathbf{W}}_{beh}^{{D}_{2}} \in \; {\mathbb{R}}^{K \times  d \times  d},{\mathbf{b}}_{ite}^{1},{\mathbf{b}}_{ite}^{2},{\mathbf{b}}_{beh}^{1},{\mathbf{b}}_{beh}^{2} \in  {\mathbb{R}}^{K \times  d} \) are learnable parameters of projection matrices and bias terms. \( \circ \) denotes behavior-wise multiplication.
+
+## E. Optimization Objective
+
+To jointly optimize the self-supervised task and behavior-aware training task, our final loss function combines \( {\mathcal{L}}_{\text{ rec }},{\mathcal{L}}_{\text{ inter }},{\mathcal{L}}_{\text{ intra }} \) in (16),(8) and (9). It can be formulated as follows:
+
+\[
+\mathcal{L} = {\mathcal{L}}_{\text{ rec }} + {\lambda }_{ssl1}{\mathcal{L}}_{\text{ intra }} + {\lambda }_{ssl2}{\mathcal{L}}_{\text{ inter }} + {\lambda }_{\text{ reg }}\parallel \mathbf{\Theta }{\parallel }^{2} \tag{19}
+\]
+
+where \( {\lambda }_{ssl1} \) and \( {\lambda }_{ssl2} \) denote the tunable hyper-parameters balancing the importance of self-supervised learning losses. \( \mathbf{\Theta } \) denote learnable parameters with hyper-parameter \( {\lambda }_{\text{ reg }} \) for the regularization penalty. The learning process of our MISSL is elaborated in Alg 1.
+
+## F. Model Analysis
+
+1) Time Complexity Analysis: For one batch of training data, the computational cost of (2) and (4) is \( O\left( {M{d}^{2} + }\right. \; \left. {T{d}^{2} + {MTd} + {T}^{2}d}\right) \) . With the attention scores, the time complexity of \( {\mathcal{L}}_{\text{ intra }} \) and \( {\mathcal{L}}_{\text{ inter }} \) is \( O\left( {\left( {M + T}\right) {Td}}\right) \) . Then MISSL takes \( O\left( {T\left( {\left| \mathcal{V}\right|  + \left| \mathcal{B}\right| }\right) d + {T}^{2}d}\right) \) to conduct the \( {\mathcal{L}}_{\text{ rec }} \) . Generally, \( \left( {\left| \mathcal{V}\right|  + \left| \mathcal{B}\right| }\right) \) is much larger than the \( M, T \) and \( d \) empirically, therefore, the overall time complexity of MISSL is \( O\left( {T\left( {\left| \mathcal{V}\right|  + \left| \mathcal{B}\right| }\right) d}\right) \) .
+
+2) Space Complexity Analysis: Compared to the current state-of-the-art multi-behavior sequential recommendation model MB-STR [56], our MISSL uses extra parameters costs \( O\left( {\left( {\left| \mathcal{B}\right|  + 1}\right) {Md}}\right) \) to represent the users’ behavior specific and shared interests and \( O\left( {\left| \mathcal{B}\right| {d}^{2}}\right) \) to develop the item-behavior transformer, which is affordable. While \( O\left( {{\left| \mathcal{B}\right| }^{2}{d}^{2}}\right) \) and \( O\left( {\left( {\left| \mathcal{B}\right|  + 1}\right) \left( {d + {d}^{2}}\right) }\right) \) extra space is needed for MB-STR to calculate the cross behavior similarity and develop behavior-aware prediction module.
+
+## V. EVALUATION
+
+In this section, we conduct experiments on three public real-world datasets to validate the effectiveness of our proposed MISSL. We investigate the following research questions:
+
+- RQ1: Compared with the baseline models, how does MISSL perform for making recommendations in multi-behavior sequential recommendation scenarios?
+
+- RQ2: What are the impacts of the designed sub-modules in MISSL?
+
+- RQ3: How do different types of behaviors contribute to the prediction of target behavior?
+
+- RQ4: How do different hyperparameters impact MISSL's performance?
+
+- RQ5: How is the efficiency and scalability of our MISSL compared with the state-of-the-art models?
+
+- RQ6: How is the interpretability of MISSL in capturing cross-type behavior dependencies and disentangling multiple interests, and how MISSL benefits from the multi-interest aspect?
+
+Algorithm 1: The Proposed MISSL Algorithm
+
+---
+
+Input: user set \( \mathcal{U} = \left\{  {u}_{i}\right\} \) , item set \( \mathcal{V} = \left\{  {v}_{j}\right\} \) , behavior
+
+			set \( \mathcal{B} = \left\{  {b}_{k}\right\} \) , interaction sequences \( \mathcal{S} \) , learning
+
+			rate \( \eta \) , and number of epochs \( E \)
+
+Output: trained model parameters \( \mathbf{\Theta } \)
+
+Initialize all parameters in \( \mathbf{\Theta } \) ;
+
+for \( e = 1 \) to \( E \) do
+
+	for \( i = 1 \) to \( \left| \mathcal{U}\right| \) do
+
+			for \( l = 1 \) to \( L \) do
+
+				Calculate the interest representation based
+
+					on the behavior-aware multi-interest
+
+					encoder according to (2)-(7);
+
+				Conduct the multi-interest self-supervised
+
+					learning according to (8)-(9);
+
+				Conduct the behavior-aware training task
+
+					according to (12);
+
+			end
+
+			Calculate loss \( \mathcal{L} \) for a training batch according
+
+			to (19);
+
+			for \( \theta  \in  \Theta \) do
+
+				\( \theta  = \theta  - \eta  \cdot  \partial \mathcal{L}/\partial \theta \)
+
+			end
+
+	end
+
+end
+
+return trained model with parameters \( \mathbf{\Theta } \) .
+
+---
+
+## A. Experimental Settings
+
+1) Datasets: Our experiments are conducted on three public real-world datasets:
+
+Yelp. This is a popular recommendation dataset collected from the Yelp challenge. Based on the explicit user rating scores (from 1 (worst) to 5 (best)), user interactions are divided into three types: dislike (rating \( \leq  2 \) ), neutral \( \left( {2 < \text{ rating } < 4}\right) \) , and like (rating \( \geq  4 \) ). In addition to ratings, there is a tip behavior where users write tips about visited venues. Here, we consider like as the target behavior.
+
+Taobao. This is a real-world e-commerce dataset collected from Taobao, one of the largest e-commerce platforms in China. There are four types of user behaviors: click, add-to-favorite, add-to-cart, and buy, where buy is considered as the target behavior due to their high relevance to Gross Merchandise Volume (GMV) in online retail, which indicates the total sales value of merchandise [15], [46].
+
+IJCAI. This dataset is released by an IJCAI competition for user activity modeling from an online e-commerce platform. Four types of behaviors are included: click, add-to-favorite, add-to-cart, and buy. Similar to the Taobao data, we regard buy as the target behavior in IJCAI data. For a fair comparison, we employ the identical pre-processed datasets released by MB-GMN [50] and MB-STR [56]. We present the statistics of our evaluation datasets in Table I.
+
+2) Compared Baselines: We compare MISSL with state-of-the-art methods from diverse research lines for a thorough evaluation of model effectiveness, covering i) single-behavior sequential recommendation models (SASRec, BERT4Rec), ii) multi-behavior general recommendation models ( \( {\mathrm{{NGCF}}}_{M} \) , LightGCN \( {}_{M} \) , MATN, MB-GMN), iii) multi-interest sequential recommendation models (SINE, ComiRec-SA, ComiRec-DR), iv) multi-behavior sequential recommendation models (SASRecM, BERT4RecM, RIB, DIPN, DMT, MBHT, MB-STR).
+
+Table I
+
+DATASET STATISTICS
+
+<table><tr><td>Dataset</td><td>#users</td><td>#items</td><td>#interaction</td><td>Behavior type</td></tr><tr><td>Yelp</td><td>19,800</td><td>22,734</td><td>\( {1.4} \times  {10}^{6} \)</td><td>\{Tip, Dislike, Neutral, Like\}</td></tr><tr><td>Taobao</td><td>147,894</td><td>99,037</td><td>\( {7.6} \times  {10}^{6} \)</td><td>\{Click, Favorite, Cart, Buy\}</td></tr><tr><td>IJCAI</td><td>423,423</td><td>874,328</td><td>\( {3.6} \times  {10}^{7} \)</td><td>\{Click, Favorite, Cart, Buy\}</td></tr></table>
+
+Single-Behavior Sequential Recommendation Models: Single-behavior sequential models have been serving as effective techniques to capture the user's interest evolving pattern for the single-behavior recommendation.
+
+- SASRec [17]: In this method, the self-attention mechanism is used to encode the item-wise sequential correlations.
+
+- BERT4Rec [37]: It models sequential information with a bidirectional transformer encoder and optimizes the model with a cloze objective.
+
+Multi-Behavior General Recommendation Models: Multi-behavior general recommendation system makes recommendations by embedding users and items as vectors based on their previous multi-behavior interactions.
+
+- \( {\mathbf{{NGCF}}}_{M} \) [43]: This method enhances NGCF, which investigates structural knowledge via a message-passing mechanism, by injecting the multi-behavioral graph relations under a graph neural network.
+
+- LightGCN \( {}_{M} \) [13]: This model enhances LightGCN, which utilizes a simplified GCN model for the recommendation, by replacing the original single-behavior graph with a multi-behavior graph.
+
+- MATN [48]: It learns the type-wise interaction dependencies with the memory and attention networks.
+
+- MB-GMN [50]: This model captures personalized multi-behavior signals with a graph meta-network and models the complex dependencies between diverse behaviors.
+
+Multi-Interest Sequential Recommendation Models: Multi-interest sequential recommender aims to extract the implicit user's multiple interests to understand the interaction's motivations better and make recommendations.
+
+- SINE [38]: This method consists of a sparse-interest module that infers a sparse set of concepts from the large concept pool and an interest aggregation module that predicts the user's current interest and makes recommendations.
+
+- ComiRec-SA [2]: It is a multi-interest model with a multi-interest capture module based on self-attention and a candidates aggregation module balancing recommendation diversity and accuracy.
+
+- ComiRec-DR [2]: It is similar to ComiRec-SA but uses CapsNet [34] to extract the interest.
+
+Multi-Behavior Sequential Recommendation Models: Multi-behavior sequential models aim to leverage the auxiliary behavior sequential interactions to improve the effectiveness of the sequential recommendation on target behavior.
+
+- SASRecM [17]: We improve the SASRec method by integrating behavior type embedding into the input embed-dings for self-attention, effectively handling dynamic multi-behavior context.
+
+- BERT4Rec \( {}_{M} \) [37]: We improve the BERT4Rec method by integrating behavior type embedding into the input embeddings for self-attention, enabling effective handling of dynamic multi-behavior context.
+
+- RIB [59]: It is an RNN-based model that uses the concatenation of the item embedding and micro-behavior embedding as the input to a GRU layer.
+
+- DIPN [10]: This model incorporates a bi-directional recurrent network and attention mechanism to capture correlations between buying and browsing activities.
+
+- DMT [9]: This method uses multiple Transformers to extract interest representations from different types of user sequences and then employs a Multi-gate Mixture-of-Experts to make multi-target predictions.
+
+- MBHT [54]: This method utilizes the item-wise semantic dependency hypergraph and item-wise multi-behavior dependency hypergraph to obtain representations with global multi-behavior information.
+
+- MB-STR [56]: It devises a multi-behavior transformer layer to capture heterogeneous fine-grained item-level multi-behavior dependencies and models diverse multi-behavior sequential patterns via multi-behavior sequential pattern generator.
+
+3) Evaluation Metrics: We use two metrics, i.e., the Hit Ratio \( \left( {{HR}@N}\right) \) and the Normalized Discounted Cumulative Gain \( \left( {{NDCG}@N}\right) \) , which is widely adopted in top- \( N \) item recommendation [50], [54], [56], to evaluate our MISSL and other baseline models.
+
+4) Implementation Details: The MISSL model is implemented with Pytorch 1.10.2 [31] and Python 3.6, The experiments are conducted on 2*NVIDIA GeForce RTX 2080ti GPU. For a fair comparison, we follow the experiment setting of MB-STR [56]. We use Gaussian distribution \( \mathcal{N}\left( {0,{0.02}}\right) \) and Adam optimizer with a learning rate of 0.001 to initialize and optimize the parameters. Also, we fix the max sequence length to 50, the decelerating rate \( t \) to 6, and the dimension of our method to 16. We run the codes of SASRec, BERT4Rec, MB-GMN, MBHT, MB-STR released by the corresponding authors, and SINE reproduced by RecBole [57]. We reproduce the pytorch version of ComiRec-SA, ComiRec-DR, \( {\operatorname{SASRec}}_{M},{\operatorname{BERT4Rec}}_{M}, \) RIB. Also, we directly obtain the best experiment results of \( {\mathrm{{NGCF}}}_{M} \) , LightGCN \( {}_{M} \) , DIPN, MATN, DMT from MB-STR [56].
+
+## B. Performance Comparison (RQ1)
+
+To avoid heavy computation on all user-item pairs, we evaluate our MISSL and all compared methods on three datasets (i.e., Yelp, Taobao, IJCAI) following the strategy in SASRec [17] and MB-STR [56]. For each user \( i \) , we randomly sample 99 negative items and rank these items along with the ground-truth item. Based on the rankings of these 100 items per user, metrics such as \( {HR} \) and \( {NDCG} \) can then be evaluated. Following SHT [49], we also retrain our MISSL and the best-performed baseline (i.e. MB-STR) for 5 times to compute \( p \) -values. The results are shown in Table II. What's more, we have expanded our evaluation of the representative models using the all-ranking protocol [13] and considering various top- \( n \) rank positions, which enables a more robust and complete assessment. The results are shown in Table III. From the results, we have the following observations:
+
+Table II
+
+PERFORMANCE COMPARISON WITH THE METRICS OF HR@10 AND NDCG@10 ON YELP, TAOBAO, AND IJCAI DATASETS. THE BEST AND SECOND-BEST RESULTS ARE IN BOLD AND UNDERLINED RESPECTIVELY.
+
+<table><tr><td rowspan="2">Model</td><td colspan="2">Yelp</td><td colspan="2">Taobao</td><td colspan="2">IJCAI</td></tr><tr><td>HR</td><td>NDCG</td><td>HR</td><td>NDCG</td><td>HR</td><td>NDCG</td></tr><tr><td>SASRe</td><td>0.845</td><td>0.561</td><td>0.593</td><td>0.389</td><td>0.842</td><td>0.666</td></tr><tr><td>BERT4Rec</td><td>0.845</td><td>0.563</td><td>0.647</td><td>0.439</td><td>0.847</td><td>0.671</td></tr><tr><td>NGCFM</td><td>0.793</td><td>0.492</td><td>0.374</td><td>0.221</td><td>0.481</td><td>0.307</td></tr><tr><td>LightGCNM</td><td>0.872</td><td>0.585</td><td>0.391</td><td>0.243</td><td>0.480</td><td>0.317</td></tr><tr><td>MATN</td><td>0.826</td><td>0.530</td><td>0.354</td><td>0.209</td><td>0.489</td><td>0.309</td></tr><tr><td>MB-GMN</td><td>0.830</td><td>0.529</td><td>0.490</td><td>0.345</td><td>0.532</td><td>0.345</td></tr><tr><td>SINE</td><td>0.579</td><td>0.353</td><td>0.587</td><td>0.326</td><td>0.743</td><td>0.558</td></tr><tr><td>ComiRec-SA</td><td>0.564</td><td>0.349</td><td>0.544</td><td>0.383</td><td>0.748</td><td>0.601</td></tr><tr><td>ComiRec-DR</td><td>0.324</td><td>0.177</td><td>0.441</td><td>0.291</td><td>0.701</td><td>0.488</td></tr><tr><td>SASRecm</td><td>0.853</td><td>0.571</td><td>0.697</td><td>0.497</td><td>0.843</td><td>0.669</td></tr><tr><td>BERT4RECM</td><td>0.852</td><td>0.567</td><td>0.679</td><td>0.471</td><td>0.834</td><td>0.652</td></tr><tr><td>RIB</td><td>0.483</td><td>0.277</td><td>0.420</td><td>0.295</td><td>0.776</td><td>0.552</td></tr><tr><td>DIPN</td><td>0.791</td><td>0.501</td><td>0.317</td><td>0.178</td><td>0.475</td><td>0.296</td></tr><tr><td>DMT</td><td>0.652</td><td>0.515</td><td>0.666</td><td>0.415</td><td>0.682</td><td>0.513</td></tr><tr><td>MBHT</td><td>0.716</td><td>0.430</td><td>0.673</td><td>0.524</td><td>0.519</td><td>0.356</td></tr><tr><td>MB-STR</td><td>0.872</td><td>0.610</td><td>0.769</td><td>0.609</td><td>0.879</td><td>0.713</td></tr><tr><td>MISSL</td><td>0.884</td><td>0.625</td><td>0.779</td><td>0.639</td><td>0.917</td><td>0.773</td></tr><tr><td>p-val.</td><td>5e-3</td><td>2e-2</td><td>3e-3</td><td>9e-4</td><td>5e-4</td><td>3e-4</td></tr></table>
+
+The effectiveness of MISSL. As shown in Table II and Table III, our MISSL consistently achieves the best results on all datasets, while the \( p \) -values are all smaller than 0.05, which can be attributed to: i) By leveraging the behavior-aware multi-interest encoder, MISSL can comprehensively understand the multi-behavior sequential recommendation problem at the interest level to discern the importance of items across different behaviors better. ii) By incorporating intra- inter-interest self-supervised learning, MISSL effectively addresses the issues of lacking ground truth labels and insufficient interaction data, leading to improved learning of item and interest representations. iii) With the behavior-aware training task, MISSL can capture complex user interaction patterns.
+
+Both multi-behavior and multi-interest approaches improve model performance. Among baseline models, SASRecM and MB-STR outperform SASRec and BERT4Rec in target behavior recommendations, despite all using Transformer-like methodologies. SINE and ComiRec-SA also outperform models like RIB and DIPN on Taobao and IJCAI datasets, highlighting the value of multi-interest modeling. However, optimizing the use of multi-behavior and multi-interest information is crucial, as a straightforward application can lead to performance decline. For example, despite using multi-behaviour data, BERT4Rec \( {}_{\mathrm{M}} \) performs worse than its single-behavior counterpart BERT4Rec on IJCAI. Additionally, while SINE performs well on Taobao and IJCAI, it falls short on the Yelp dataset due to Yelp's unique characteristics, where isolated user ratings make multi-interest modeling less effective and potentially counterproductive.
+
+Table III
+
+PERFORMANCE EVALUATION VARYING TOP-N IN TERMS OF HR@N AND NDCG@N (N=5, 10). MB-GMN RUNS OUT-OF-MEMORY ON Taobao AND IJCAI DATASETS
+
+<table><tr><td colspan="2">Metric</td><td>BERT4Rec</td><td>MB-GMN</td><td>SINE</td><td>BERT4Rec</td><td>MB-STR</td><td>MISSL</td></tr><tr><td rowspan="4">Yelp</td><td>HR@5</td><td>0.019</td><td>0.016</td><td>0.024</td><td>0.018</td><td>0.028</td><td>0.033</td></tr><tr><td>HR@10</td><td>0.036</td><td>0.031</td><td>0.034</td><td>0.037</td><td>0.054</td><td>0.058</td></tr><tr><td>NDCG@5</td><td>0.011</td><td>0.009</td><td>0.017</td><td>0.011</td><td>0.017</td><td>0.021</td></tr><tr><td>NDCG@10</td><td>0.017</td><td>0.014</td><td>0.021</td><td>0.016</td><td>0.025</td><td>0.028</td></tr><tr><td rowspan="4">Taobao</td><td>HR@5</td><td>0.015</td><td>-</td><td>0.055</td><td>0.019</td><td>0.063</td><td>0.109</td></tr><tr><td>HR@10</td><td>0.025</td><td>-</td><td>0.071</td><td>0.030</td><td>0.096</td><td>0.164</td></tr><tr><td>NDCG@5</td><td>0.011</td><td>-</td><td>0.041</td><td>0.013</td><td>0.039</td><td>0.073</td></tr><tr><td>NDCG@10</td><td>0.013</td><td>-</td><td>0.046</td><td>0.016</td><td>0.051</td><td>0.091</td></tr><tr><td rowspan="4">IJCAI</td><td>HR@5</td><td>0.022</td><td>-</td><td>0.033</td><td>0.019</td><td>0.038</td><td>0.056</td></tr><tr><td>HR@10</td><td>0.034</td><td>-</td><td>0.049</td><td>0.031</td><td>0.056</td><td>0.084</td></tr><tr><td>NDCG@5</td><td>0.014</td><td>-</td><td>0.022</td><td>0.012</td><td>0.025</td><td>0.038</td></tr><tr><td>NDCG@10</td><td>0.018</td><td>-</td><td>0.027</td><td>0.015</td><td>0.031</td><td>0.047</td></tr></table>
+
+MISSL consistently outperforms multi-behavior and multi-
+
+interest based methods. Our MISSL surpasses competing multi-behavior and multi-interest recommendation systems (e.g., SINE and MB-STR), showcasing the advantages of unifying multi-behavior and multi-interest approaches. This amalgamation enables nuanced modeling of complex user interests and a richer comprehension of multi-behavior dynamics, leading to a more effective and synergistic recommendation performance.
+
+## C. Module Ablation Analyses (RQ2)
+
+In this section, we explore the design rationale of submodules within our MISSL framework. To do this, we conduct experiments where we remove each key module and implement four model variants of MISSL corresponding to four technical aspects of our approach: i) " \( w/{o\eta } \) ": MISSL without the adaptive sparsification attention \( \eta \left( \cdot \right) \) . ii) " \( w/o{\mathrm{{SSL}}}_{\text{ intra }} \) ": MISSL without the intra-interest self-supervised learning. iii) " \( w/o{\mathrm{{SSL}}}_{\text{ inter }} \) ": MISSL without the inter-interest self-supervised learning. iv) " \( w/o \) bat": MISSL without the behavior-aware training task.
+
+We evaluate the performance of the aforementioned model variants as well as MISSL, and the corresponding results of HR@10 and NDCG@10 on all three datasets are presented in Table IV. Upon close examination of the results, we make the following observations: i) Removing the adaptive sparsifica-tion mechanism (i.e.," \( w/{o\eta } \) ") results in significant performance degradation. This validates the adaptive sparsification mechanism is critical for effectively adjusting propagation to focus on salient interests and items, which can reduce the impact of irrelevant item noise when propagating information between items and interests. ii) The performance gap between our model and \( w/o{\mathrm{{SSL}}}_{\text{ intra }} \) highlights the effectiveness of intra-interest self-supervised learning in guiding the interest learning process. Furthermore, inter-interest self-supervised learning further improves performance, emphasizing the need to address data insufficiency, which can otherwise impair interest modeling. iii) When removing the behavior-aware task (" \( w/o \) bat"), the model’s performance experiences a decline, confirming that user interactions' patterns become complex under the multi-behavior scenario. The behavior-aware task not only addresses the challenge of complex patterns but also plays a crucial role in stabilizing the model's convergence in practice.
+
+Table IV
+
+ABLATION STUDIES FOR DIFFERENT SUB-MODULES ON YELP, TAOBAO AND IJCAI DATASETS, IN TERMS OF HR@10 AND NDCG@10.
+
+<table><tr><td rowspan="2">Model</td><td colspan="2">Yelp</td><td colspan="2">Taobao</td><td colspan="2">IJCAI</td></tr><tr><td>HR</td><td>NDCG</td><td>HR</td><td>NDCG</td><td>HR</td><td>NDCG</td></tr><tr><td>\( w/{o\eta } \)</td><td>0.876</td><td>0.611</td><td>0.765</td><td>0.627</td><td>0.908</td><td>0.762</td></tr><tr><td>\( w/o{\mathrm{{SSL}}}_{\text{ intra }} \)</td><td>0.874</td><td>0.614</td><td>0.769</td><td>0.628</td><td>0.909</td><td>0.764</td></tr><tr><td>\( w/o{\mathrm{{SSL}}}_{\text{ inter }} \)</td><td>0.873</td><td>0.612</td><td>0.770</td><td>0.632</td><td>0.913</td><td>0.767</td></tr><tr><td>\( w/o \) bat</td><td>0.874</td><td>0.613</td><td>0.771</td><td>0.632</td><td>0.910</td><td>0.765</td></tr><tr><td>MISSL</td><td>0.884</td><td>0.625</td><td>0.779</td><td>0.639</td><td>0.917</td><td>0.773</td></tr></table>
+
+## D. Effect of Auxiliary Data (RQ3)
+
+To validate whether incorporating more diverse behavior types enhances performance, we conducted ablation experiments using the following model variants: i) The "+" variant uses only the target behavior itself to make predictions. (e.g., +pos, +buy). ii) The "-" model variants remove a specific type of interaction, such as page-views (-pv) or add-to-cart events (- cart), when forecasting the user's target behavior. As shown in Figure 3, our full model utilizing all interaction behavior types consistently achieves the best performance compared to the other variants. This demonstrates that incorporating auxiliary behaviors improves recommendation results by leveraging comprehensive knowledge across multiple behavior types.
+
+![9_929_1306_695_563_0.jpg](images/9_929_1306_695_563_0.jpg)
+
+Figure 3. Ablation studies on the effect of auxiliary data on model performance, in terms of \( {HR}@N \) and \( {NDCG}@N\left( {\mathrm{\;N} = 5,{10},{20}}\right) \) .
+
+## E. Hyperparameter Study (RQ4)
+
+To investigate the effect of different hyper-parameter settings on MISSL, we perform experiments on Yelp, Taobao, and IJCAI datasets with different configurations of key hyper-parameters in terms of HR@10 and NDCG@10, namely, the model dimensionality \( d \) , and the softmax temperature \( \tau \) . As shown in Figure 4, we conclude as follows:
+
+Model Dimentionality \( d \) . We evaluated our model by varying the hidden dimension \( d \) from 8 to 128 . The best performance can be achieved with the hidden state dimensionality of 16 on Yelp, and 128 on Taobao and IJCAI, but we used 16 for all to ensure consistent comparison. As shown, performance initially improves on all datasets as \( d \) increases from 8 to 16 since a higher dimensionality enables greater representational capacity. However, with further increases in \( d \) from 16 to 128, performance declines on Yelp yet continues improving on Taobao and IJCAI. We attribute it to differences in dataset characteristics. More precisely, Taobao dataset being 4 times larger than Yelp and IJCAI dataset being 25 times larger than Yelp, implies that it can benefit from and requires a higher dimensionality to achieve optimal performance. However, the Yelp dataset shows that when the value of \( d \) exceeds 16, the recommendation accuracy curve sharply decreases with increased training epochs, indicating a potential overfitting issue. Therefore, it is crucial to carefully select the appropriate hidden dimension \( d \) based on the dataset size to achieve the best results.
+
+Softmax Temperature \( \tau \) . As discussed in [42], softmax temperature \( \tau \) involves balancing local separation and global uniformity in embedding distributions. Performance trends align with this trade-off in our experiments across \( \tau \) values from 0.1 to 10. Optimal performance across all datasets is achieved at \( \tau  = {1.0} \) , where we observe a performance peak, increasing up to this point and then declining. For Yelp, performance is lowest at values smaller than the peak, where a \( \tau \) of 0.1 excessively emphasizes global uniformity over local detail, an issue given Yelp's mutually exclusive ratings, which demand greater local separation. Conversely, for Taobao and IJCAI, too great a focus on uniformity at higher \( \tau \) values overlooks the behavior-specific interest information, leading to the worst performance. Thus, a tailored \( \tau \) effectively balances the two, contingent upon the dataset's unique attributes.
+
+## F. Model Efficiency Study (RQ5)
+
+We evaluated the efficiency of our model from two aspects: convergence speed and training time cost.
+
+1) Model Convergence Analysis: To study the model convergence efficiency, we compared the training process of our proposed model against two state-of-the-art baselines (MB-STR and MBHT) using the Yelp, Taobao, and IJCAI datasets. As shown in figure 5, our proposed model achieves superior performance with fewer training epochs and greater stability than the baselines. Specifically, our MISSL reaches peak test performance in just 79 and 58 epochs on Taobao and IJCAI respectively. We attribute it to the behavior-aware training approach, which stabilizes the model training and accelerates the convergence. In contrast, MB-STR and MBHT require considerably more epochs to converge.
+
+![10_920_206_704_335_0.jpg](images/10_920_206_704_335_0.jpg)
+
+Figure 4. Hyperparameter study on MISSL (i.e. the model dimensionality \( d \) , the softmax temperature \( \tau \) ), in terms of HR@10 and NDCG@10, on Yelp, Taobao and IJCAI datasets.
+
+![10_917_664_707_174_0.jpg](images/10_917_664_707_174_0.jpg)
+
+Figure 5. Test performance w.r.t training epochs on Yelp, Taobao and IJCAI datasets for convergence analysis.
+
+2) Computational Cost Evaluation: To evaluate the training computational cost, we recorded the training times of our proposed model and the baselines (Table V). we can observe our model's superior efficiency on the Taobao and IJCAI datasets with fewer training times. Specifically, MBHT employs a hypergraph neural network, which is time-consuming. Additionally, MISSL achieves faster convergence than MB-STR, reducing training time. However, MISSL does require more time to achieve optimal performance on Yelp, primarily because the isolated user ratings present a challenge to efficient multi-interest modeling. More specifically, in the Yelp dataset, MISSL encounters difficulties in learning how to accurately discern the significance of "neutral" interactions when predicting the next positive item from a multi-interest perspective (see Figure 8).
+
+Table V
+
+TRAINING TIME COSTS ON YELP, TAOBAO, AND IJCAI.
+
+<table><tr><td>Training time Model <br> Dataset</td><td>MBHT</td><td>MB-STR</td><td>MISSL</td></tr><tr><td>Yelp</td><td>1.48h</td><td>1.13h</td><td>2.69h</td></tr><tr><td>Taobao</td><td>28.08h</td><td>7.74h</td><td>6.01h</td></tr><tr><td>IJCAI</td><td>34.28h</td><td>14.65h</td><td>13.01h</td></tr></table>
+
+G. Case Study (RQ6)
+
+1) Cross-Type Behavior Dependencies Analysis: To further investigate the interpretability of MISSL, we analyzed visualizing the multi-behavior dependency modeling. In particular, we show the cross-type behavior dependencies in Figure 6, which are obtained by \( {\mathbf{{BB}}}^{\top } \) , where \( \mathbf{B} \) is behavior embedding matrix, learned from the behavior-aware context embedding layer. Remarkably, intuitive patterns emerge from the visualization, validating the effectiveness of our approach: i) There are no high dependencies between behaviors in the Yelp dataset, which may be due to the mutually exclusive nature of different behaviors in Yelp. ii) In the Taobao dataset, when predicting "buy", the information contributed by "fav" and "cart" behaviors is substantial, which aligns with intuition about online shopping patterns. iii) In the IJCAI dataset, the influence of "cart" behavior seems weak, which is unusual. Upon further analysis of the IJCAI dataset, we find that the amount of "cart" interactions is very low, comprising only 0.5% of the dataset. Additionally, the transition probabilities from "cart" to "buy" and "fav" are just 0.1% and 0.0%, respectively. These sparse cart data likely impede effective learning of cross-behavior dependencies.
+
+![11_166_206_701_188_0.jpg](images/11_166_206_701_188_0.jpg)
+
+Figure 6. Visualization of the cross-type behavior dependencies.
+
+![11_173_982_689_210_0.jpg](images/11_173_982_689_210_0.jpg)
+
+Figure 7. Visualized embeddings for behavior-specific interests learned by MISSL on Yelp, Taobao and IJCAI.
+
+2) Disentangled Multi-Interest Visualization: We further conduct the visualization of \( {\mathbf{C}}^{n,{spe}}\left( {1 \leq  n \leq  \left| \mathcal{B}\right| }\right) \) , where \( {\mathbf{C}}^{n,{spe}} \) is the behavior-specific interest prototype embedding matrix for behavior \( n \) , through t-SNE [41] to investigate the rationality of our modeling of interests. The visualization results are presented in Figure 7. We utilize different colors to represent different behaviors. We have the following observations from the results: i) The three datasets' representation spaces exhibit independent and intersecting distributions of interest across behaviors. We posit that intra-interest self-supervised learning enables behavior-specific interests to become more discriminative, represented as clearly distinguished clusters for each behavior. Meanwhile, inter-interest self-supervised learning propagates shared interests to facilitate learning behavior-specific interests and modeling the interplay across interests under different behaviors, represented as intersecting regions in the representation space, as highlighted in the red dashed box in Figure 7. ii) With more data, the distribution of interests becomes more spread out (Yelp < Taobao < IJCAI). This intuitive phenomenon arises because larger item sets exhibit a greater variety, reflecting a wider range of potential interests behind user behaviors. Therefore, MISSL can take advantage of the more prosperous signals in datasets to extract more comprehensive user interests, leading to better performance.
+
+![11_923_204_705_191_0.jpg](images/11_923_204_705_191_0.jpg)
+
+Figure 8. Visualization of the attention distribution for user 6 on Yelp, comparing MISSL (left) with MB-STR (right).
+
+3) Attention Distribution Visualization: Furthermore, we have conducted an in-depth case study using the Yelp dataset, wherein we visualized the attention distribution according to the historical behavior sequence of MISSL and MB-STR as they predict the next positive interaction for user 6 . The visualization results are shown in Figure 8. Our observations indicate that with advanced training, both models increasingly focus on the user's recent interactions. However, MISSL prominently focuses on the user's historical positive interactions while appropriately down weighting negative ones. This demonstrates MISSL's ability to evaluate the relative importance and temporal impact of distinct behaviors. In contrast, MB-STR struggles with this level of nuanced discernment, which may introduce noise into its predictions. This underscores a key aspect of MISSL's enhanced performance: its adept understanding of user behavior, which allows it to emphasize the most relevant interactions for prediction.
+
+## VI. CONCLUSION
+
+In this work, we propose Multi-Interest Self-Supervised Learning (MISSL), a novel approach to improve sequential recommendation under multi-behavior scenarios. Specifically, we develop a behavior-aware multi-interest encoder to extract heterogeneous user interests for each behavior type. We also incorporate intra- and inter-interest self-supervised learning to address the lack of ground truth interest labels and limited data across behaviors. Moreover, the behavior-aware training task models user interests evolving while accounting for changing behavior patterns, enabling stable model convergence during the training stage. Comprehensive experiments on real-world datasets demonstrate that MISSL outperforms state-of-the-art methods. In the future, we would like to endow MISSL with the power of modeling side information and multi-modality to further enhance interest modeling and mitigate data sparsity problems.
+
+## ACKNOWLEDGMENTS
+
+We thank the anonymous reviewers for their helpful feedback. The work described in this paper was partially funded by the National Natural Science Foundation of China (Grant Nos. 62272173, 61872148), the Natural Science Foundation of Guangdong Province (Grant Nos. 2022A1515010179, 2019A1515010768), the Science and Technology Planning Project of Guangdong Province (Grant No. 2023A0505050106).
+
+## REFERENCES
+
+[1] I. Beltagy, M. E. Peters, and A. Cohan. Longformer: The long-document transformer. arXiv preprint arXiv:2004.05150, 2020.
+
+[2] Y. Cen, J. Zhang, X. Zou, C. Zhou, H. Yang, and J. Tang. Controllable multi-interest framework for recommendation. In International Conference on Knowledge Discovery & Data Mining (KDD), pages 2942-2951, 2020.
+
+[3] J. Chang, C. Gao, Y. Zheng, Y. Hui, Y. Niu, Y. Song, D. Jin, and Y. Li. Sequential recommendation with graph neural networks. In International Conference on Research and Development in Information Retrieval (SIGIR), pages 378-387, 2021.
+
+[4] L. Chen, J. Ding, M. Yang, C. Li, C. Song, and L. Yi. Item-provider co-learning for sequential recommendation. In International Conference on Research and Development in Information Retrieval (SIGIR), pages 1817-1822, 2022.
+
+[5] Y. Chen, Z. Liu, J. Li, J. McAuley, and C. Xiong. Intent contrastive learning for sequential recommendation. In The Web Conference (WWW), pages 2172-2182, 2022.
+
+[6] Y. Chen, L. Wu, and M. Zaki. Iterative deep graph learning for graph neural networks: Better and robust node embeddings. Advances in Neural Information Processing Systems (NeurIPS), 33:19314-19326, 2020.
+
+[7] J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova. Bert: Pre-training of deep bidirectional transformers for language understanding. arXiv preprint arXiv:1810.04805, 2018.
+
+[8] C. Gao, X. He, D. Gan, X. Chen, F. Feng, Y. Li, T.-S. Chua, L. Yao, Y. Song, and D. Jin. Learning to recommend with multiple cascading behaviors. Transactions on Knowledge and Data Engineering (TKDE), 33(6):2588-2601, 2019.
+
+[9] Y. Gu, Z. Ding, S. Wang, L. Zou, Y. Liu, and D. Yin. Deep multifaceted transformers for multi-objective ranking in large-scale e-commerce recommender systems. In International Conference on Information & Knowledge Management (CIKM), pages 2493-2500, 2020.
+
+[10] L. Guo, L. Hua, R. Jia, B. Zhao, X. Wang, and B. Cui. Buying or browsing?: Predicting real-time purchasing intent using attention-based deep network with multiple behavior. In International Conference on Knowledge Discovery & Data Mining (KDD), pages 1984-1992, 2019.
+
+[11] K. He, H. Fan, Y. Wu, S. Xie, and R. Girshick. Momentum contrast for unsupervised visual representation learning. In Conference on Computer Vision and Pattern Recognition (CVPR), pages 9729-9738, 2020.
+
+[12] R. He and J. McAuley. Fusing similarity models with markov chains for sparse sequential recommendation. In International Conference on Data Mining (ICDM), pages 191-200. IEEE, 2016.
+
+[13] X. He, K. Deng, X. Wang, Y. Li, Y. Zhang, and M. Wang. Lightgen: Simplifying and powering graph convolution network for recommendation. In International Conference on Research and Development in Information Retrieval (SIGIR), pages 639-648, 2020.
+
+[14] B. Hidasi, A. Karatzoglou, L. Baltrunas, and D. Tikk. Session-based recommendations with recurrent neural networks. In International Conference on Learning Representations (ICLR), 2016.
+
+[15] C. Huang, X. Wu, X. Zhang, C. Zhang, J. Zhao, D. Yin, and N. V. Chawla. Online purchase prediction via multi-scale modeling of behavior dynamics. In International Conference on Knowledge Discovery & Data Mining (KDD), pages 2613-2622, 2019.
+
+[16] B. Jin, C. Gao, X. He, D. Jin, and Y. Li. Multi-behavior recommendation with graph convolutional networks. In International Conference on Research and Development in Information Retrieval (SIGIR), pages 659- 668, 2020.
+
+[17] W.-C. Kang and J. McAuley. Self-attentive sequential recommendation. In International Conference on Data Mining (ICDM), pages 197-206. IEEE, 2018.
+
+[18] N. Kitaev, Ł. Kaiser, and A. Levskaya. Reformer: The efficient transformer. arXiv preprint arXiv:2001.04451, 2020.
+
+[19] C. Li, Z. Liu, M. Wu, Y. Xu, H. Zhao, P. Huang, G. Kang, Q. Chen, W. Li, and D. L. Lee. Multi-interest network with dynamic routing for recommendation at tmall. In International Conference on Information & Knowledge Management (CIKM), pages 2615-2623, 2019.
+
+[20] H. Li, X. Wang, Z. Zhang, J. Ma, P. Cui, and W. Zhu. Intention-aware sequential recommendation with structured intent transition. Transactions on Knowledge and Data Engineering (TKDE), 34(11):5403-5414, 2021.
+
+[21] J. Li, P. Zhou, C. Xiong, and S. C. Hoi. Prototypical contrastive learning of unsupervised representations. arXiv preprint arXiv:2005.04966, 2020.
+
+[22] Y. Li, C. Gao, H. Luo, D. Jin, and Y. Li. Enhancing hypergraph neural networks with intent disentanglement for session-based recommendation. In International Conference on Research and Development in Information Retrieval (SIGIR), pages 1997-2002, 2022.
+
+[23] Z. Li, H. Zhao, Q. Liu, Z. Huang, T. Mei, and E. Chen. Learning from history and present: Next-item recommendation via discriminatively exploiting user behaviors. In International Conference on Knowledge Discovery & Data Mining (KDD), pages 1734-1743, 2018.
+
+[24] Y. Lin, Y. Gou, Z. Liu, B. Li, J. Lv, and X. Peng. Completer: Incomplete multi-view clustering via contrastive prediction. In Conference on Computer Vision and Pattern Recognition (CVPR), pages 11174-11183, 2021.
+
+[25] Z. Liu, Y. Chen, J. Li, P. S. Yu, J. McAuley, and C. Xiong. Contrastive self-supervised sequential recommendation with robust augmentation. arXiv preprint arXiv:2108.06479, 2021.
+
+[26] J. Luo, M. He, X. Lin, W. Pan, and Z. Ming. Dual-task learning for multi-behavior sequential recommendation. In International Conference on Information & Knowledge Management (CIKM), pages 1379-1388, 2022.
+
+[27] C. Meng, Z. Zhao, W. Guo, Y. Zhang, H. Wu, C. Gao, D. Li, X. Li, and R. Tang. Coarse-to-fine knowledge-enhanced multi-interest learning framework for multi-behavior recommendation. arXiv preprint arXiv:2208.01849, 2022.
+
+[28] W. Meng, D. Yang, and Y. Xiao. Incorporating user micro-behaviors and item knowledge into multi-task learning for session-based recommendation. In International Conference on Research and Development in Information Retrieval (SIGIR), pages 1091-1100, 2020.
+
+[29] W. Norcliffe-Brown, S. Vafeias, and S. Parisot. Learning conditioned graph structures for interpretable visual question answering. Advances in Neural Information Processing Systems (NeurIPS), 31, 2018.
+
+[30] A. v. d. Oord, Y. Li, and O. Vinyals. Representation learning with contrastive predictive coding. arXiv preprint arXiv:1807.03748, 2018.
+
+[31] A. Paszke, S. Gross, F. Massa, A. Lerer, J. Bradbury, G. Chanan, T. Killeen, Z. Lin, N. Gimelshein, L. Antiga, et al. Pytorch: An imperative style, high-performance deep learning library. Advances in Neural Information Processing Systems (NeurIPS), 32, 2019.
+
+[32] R. Qiu, Z. Huang, H. Yin, and Z. Wang. Contrastive learning for representation degeneration problem in sequential recommendation. In International Conference on Web Search and Data Mining (WSDM), pages 813-823, 2022.
+
+[33] S. Rendle, C. Freudenthaler, and L. Schmidt-Thieme. Factorizing personalized markov chains for next-basket recommendation. In The Web Conference (WWW), pages 811-820, 2010.
+
+[34] S. Sabour, N. Frosst, and G. E. Hinton. Dynamic routing between capsules. Advances in Neural Information Processing Systems (NeurIPS), 30, 2017.
+
+[35] C. Shang, Y. Hou, W. X. Zhao, Y. Li, and J. Zhang. Multi-grained hypergraph interest modeling for conversational recommendation. arXiv preprint arXiv:2305.04798, 2023.
+
+[36] N. Srivastava, G. Hinton, A. Krizhevsky, I. Sutskever, and R. Salakhutdi-nov. Dropout: a simple way to prevent neural networks from overfitting. Journal of Machine Learning Research (JMLR), 15(1):1929-1958, 2014.
+
+[37] F. Sun, J. Liu, J. Wu, C. Pei, X. Lin, W. Ou, and P. Jiang. Bert4rec: Sequential recommendation with bidirectional encoder representations from transformer. In International Conference on Information & Knowledge Management (CIKM), pages 1441-1450, 2019.
+
+[38] Q. Tan, J. Zhang, J. Yao, N. Liu, J. Zhou, H. Yang, and X. Hu. Sparse-interest network for sequential recommendation. In International Conference on Web Search and Data Mining (WSDM), pages 598-606, 2021.
+
+[39] J. Tang and K. Wang. Personalized top-n sequential recommendation via convolutional sequence embedding. In International Conference on Web Search and Data Mining (WSDM), pages 565-573, 2018.
+
+[40] Y. Tian, J. Chang, Y. Niu, Y. Song, and C. Li. When multi-level meets multi-interest: A multi-grained neural model for sequential recommendation. In International Conference on Research and Development in Information Retrieval (SIGIR), pages 1632-1641, 2022.
+
+[41] L. Van der Maaten and G. Hinton. Visualizing data using t-sne. Journal of Machine Learning Research (JMLR), 9(11), 2008.
+
+[42] F. Wang and H. Liu. Understanding the behaviour of contrastive loss. In Conference on Computer Vision and Pattern Recognition (CVPR), pages 2495-2504, 2021.
+
+[43] X. Wang, X. He, M. Wang, F. Feng, and T.-S. Chua. Neural graph collaborative filtering. In International Conference on Research and Development in Information Retrieval (SIGIR), pages 165-174, 2019.
+
+[44] X. Wei, T. Zhang, Y. Li, Y. Zhang, and F. Wu. Multi-modality cross attention network for image and sentence matching. In Conference on Computer Vision and Pattern Recognition (CVPR), pages 10941-10950, 2020.
+
+[45] F. Wu, Y. Qiao, J.-H. Chen, C. Wu, T. Qi, J. Lian, D. Liu, X. Xie, J. Gao, W. Wu, et al. Mind: A large-scale dataset for news recommendation. In Annual Meeting of the Association for Computational Linguistics (ACL), pages 3597-3606, 2020.
+
+[46] L. Wu, D. Hu, L. Hong, and H. Liu. Turning clicks into purchases: Revenue optimization for product search in e-commerce. In International Conference on Research and Development in Information Retrieval (SIGIR), pages 365-374, 2018.
+
+[47] Y. Wu, R. Xie, Y. Zhu, X. Ao, X. Chen, X. Zhang, F. Zhuang, L. Lin, and Q. He. Multi-view multi-behavior contrastive learning in recommendation. In Database Systems for Advanced Applications (DASFAA), pages 166-182. Springer, 2022.
+
+[48] L. Xia, C. Huang, Y. Xu, P. Dai, B. Zhang, and L. Bo. Multiplex behavioral relation learning for recommendation via memory augmented transformer network. In International Conference on Research and Development in Information Retrieval (SIGIR), pages 2397-2406, 2020.
+
+[49] L. Xia, C. Huang, and C. Zhang. Self-supervised hypergraph transformer for recommender systems. In International Conference on Knowledge Discovery & Data Mining (KDD), pages 2100-2109, 2022.
+
+[50] L. Xia, Y. Xu, C. Huang, P. Dai, and L. Bo. Graph meta network for multi-behavior recommendation. In International Conference on Research and Development in Information Retrieval (SIGIR), pages 757- 766, 2021.
+
+[51] X. Xie, F. Sun, Z. Liu, S. Wu, J. Gao, J. Zhang, B. Ding, and B. Cui. Contrastive learning for sequential recommendation. In International Conference on Data Engineering (ICDE), pages 1259-1273. IEEE, 2022.
+
+[52] J. Xu, C. Wang, C. Wu, Y. Song, K. Zheng, X. Wang, C. Wang, G. Zhou, and K. Gai. Multi-behavior self-supervised learning for recommendation. arXiv preprint arXiv:2305.18238, 2023.
+
+[53] Y. Yang, C. Huang, L. Xia, C. Huang, D. Luo, and K. Lin. Debiased contrastive learning for sequential recommendation. In The Web Conference (WWW), pages 1063-1073, 2023.
+
+[54] Y. Yang, C. Huang, L. Xia, Y. Liang, Y. Yu, and C. Li. Multi-behavior hypergraph-enhanced transformer for sequential recommendation. In International Conference on Knowledge Discovery & Data Mining (KDD), pages 2263-2274, 2022.
+
+[55] Y. Ye, L. Xia, and C. Huang. Graph masked autoencoder for sequential recommendation. arXiv preprint arXiv:2305.04619, 2023.
+
+[56] E. Yuan, W. Guo, Z. He, H. Guo, C. Liu, and R. Tang. Multi-behavior sequential transformer recommender. In International Conference on Research and Development in Information Retrieval (SIGIR), pages 1642-1652, 2022.
+
+[57] W. X. Zhao, S. Mu, Y. Hou, Z. Lin, Y. Chen, X. Pan, K. Li, Y. Lu, H. Wang, C. Tian, et al. Recbole: Towards a unified, comprehensive and efficient framework for recommendation algorithms. In International Conference on Information & Knowledge Management (CIKM), pages 4653-4664, 2021.
+
+[58] H. Zhou, S. Zhang, J. Peng, S. Zhang, J. Li, H. Xiong, and W. Zhang. Informer: Beyond efficient transformer for long sequence time-series forecasting. In AAAI Conference on Artificial Intelligence (AAAI), volume 35, pages 11106-11115, 2021.
+
+[59] M. Zhou, Z. Ding, J. Tang, and D. Yin. Micro behaviors: A new perspective in e-commerce recommender systems. In International Conference on Web Search and Data Mining (WSDM), pages 727-735, 2018.

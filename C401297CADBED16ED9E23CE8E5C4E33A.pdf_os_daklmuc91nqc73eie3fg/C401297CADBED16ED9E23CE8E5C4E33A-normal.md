@@ -1,0 +1,469 @@
+# Aiming at the Target: Filter Collaborative Information for Cross-Domain Recommendation
+
+Hanyu Li
+
+hanyu-li23@mails.tsinghua.edu.cn
+
+Tsinghua University
+
+Beijing, China
+
+Weizhi Ma
+
+mawz12@hotmail.com
+
+Tsinghua University
+
+Beijing, China
+
+Peijie Sun
+
+sun.hfut@gmail.com
+
+Tsinghua University
+
+Beijing, China
+
+Jiayu Li
+
+jy-li20@mails.tsinghua.edu.cn
+
+Tsinghua University
+
+Beijing, China
+
+Cunxiang Yin
+
+jasonyin@tencent.com
+
+Tencent
+
+Beijing, China
+
+Yancheng He
+
+collihe@tencent.com
+
+Tencent
+
+Beijing, China
+
+Guoqiang Xu
+
+chybotxu@tencent.com
+
+Tencent
+
+Beijing, China
+
+Min Zhang
+
+z-m@tsinghua.edu.cn
+
+Tsinghua University
+
+Beijing, China
+
+Shaoping Ma
+
+msp@tsinghua.edu.cn
+
+Tsinghua University
+
+Beijing, China
+
+## ABSTRACT
+
+As recommender systems become pervasive in various scenarios, cross-domain recommenders (CDR) are proposed to enhance the performance of one target domain by data from other related source domains. However, irrelevant information from the source domain may instead degrade target domain performance, which is known as the negative transfer problem. There have been some attempts to address this problem, mostly by designing adaptive representations for overlapped users. Whereas, these methods rely on the learned representations of the model, lacking explicit constraint to filter irrelevant source-domain collaborative information for the target domain, which limits their cross-domain transfer capability.
+
+In this paper, we propose a novel Collaborative information regularized User Transformation (CUT) framework to tackle the negative transfer problem by directly filtering users' collaborative information. In CUT, target domain user similarity is adopted as a constraint for user transformation to filter user collaborative information from the source domain. First, CUT learns user similarity relationships from the target domain. Then, source-target information transfer is guided by the user similarity, where we design a user transformation layer to learn target-domain user representations and a contrastive loss to supervise the user collaborative information transferring. As a flexible and lightweight framework, CUT can be applied with various single-domain recommender systems as the backbone and extend them to multi-domain tasks. We conduct extensive experiments of CUT with two single-domain backbone recommenders on six CDR tasks from two real-world datasets. The results show significant performance improvement of CUT compared with SOTA single and cross-domain methods. Further analysis illustrates that CUT can effectively alleviate the negative transfer problem.
+
+## CCS CONCEPTS
+
+- Information systems \( \rightarrow \) Recommender systems.
+
+## KEYWORDS
+
+Recommender Systems, Cross-Domain Recommendation, User Modeling, Representation Learning, Contrastive Learning
+
+## ACM Reference Format:
+
+Hanyu Li, Weizhi Ma, Peijie Sun, Jiayu Li, Cunxiang Yin, Yancheng He, Guoqiang Xu, Min Zhang, and Shaoping Ma. 2023. Aiming at the Target: Filter Collaborative Information for Cross-Domain Recommendation. In SIGIR '24, July 14-18 2024, USA. ACM, New York, NY, USA, 11 pages. https: //doi.org/10.1145/1122445.1122456
+
+![0_936_1227_726_376_0.jpg](images/0_936_1227_726_376_0.jpg)
+
+Figure 1: User similarity distortion in cross-domain recommendation. For a target user \( u \) , some users have similar source-domain preferences and different target-domain preferences, e.g. \( {u}_{2} \) , which will lead to negative transfer of \( {u}_{2} \) for \( u \) . Our CUT framework alleviates it by filtering misleading collaborative information from users with different target-domain preferences (i.e., \( {u}_{2} \) and \( {u}_{4} \) ).
+
+## 1 INTRODUCTION
+
+As recommender systems have been extensively applied in various scenarios, users' interaction data in multiple domains has been generated, such as different categories on e-commerce websites and different media forms on multimedia platforms. These cross-domain interaction data enable the systems to improve recommendation accuracy in one domain (i.e., the target domain) with rich information from other domains (i.e., the source domains) including users' collaborative information, categorical preference, etc.
+
+Various methods have been proposed for the CDR tasks, which explored how to encode user/item representations from different domains and how to transfer information among domains. For instance, early attempts \( \left\lbrack  {9,{19},{26}}\right\rbrack \) leveraged shared embedding or network parameters to represent and transfer information in different domains. Another branch of cross-domain recommendation methods sought to bridge the domain gap by mapping the embed-dings of users/items that are shared across domains [11, 22, 35]. Further research modified the mapping mechanism and introduced various types of supervision signals including adversarial training and contrastive learning, to guide the mapping process \( \left\lbrack  {7,{16}}\right\rbrack \) .
+
+Although these studies are technically sound and have achieved promising results, most of them have not considered the negative transfer problem [27, 28]. As information in source domain (s) is not always useful for the target domain, adding source domain data indistinguishably during the training process may bring negative effects, which will cause the negative transfer issue for CDR. Some recent works attempted to avoid negative transfer by designing adaptive representations for overlapped users. For example, Dis-enCDR [3] learns disentangled embeddings for domain-relevant and irrelevant components, and CATART [16] proposes the attention-based representation transfer module.
+
+However, these methods solely rely on the representation capacity of the model to alleviate the contradictions between domains, without attempting to fundamentally filter contradictory information. These contradictions mainly consist of the distortion of user collaborative relationships between domains. Particularly, users who show similar preferences in the source domain may have different interests in the target domain. Therefore, some collaborative knowledge in the source domain will become irrelevant or even noisy information in the target domain. As illustrated in Figure 1, suppose we aim to learn the user profile of user \( u \) in the target domain from known users with similar preferences. The similarity between \( u \) and \( {u}_{2} \) in the source domain conflicts with the target domain. This kind of irrelevant information confounds the model and induces sub-optimal performance. Single-domain approaches utilize the target-domain information from similar users \( {u}_{1} \) and \( {u}_{3} \) . Most previous cross-domain approaches additionally consider source-domain information from \( {u}_{1} \) and \( {u}_{2} \) . However, the irrelevant source information of \( {u}_{2} \) should be filtered out during model training.
+
+In this paper, we propose a flexible and lightweight Collaborative information regularized User Transformation (CUT) framework to alleviate the negative transfer problem by regularizing the similarity of user pairs, which filters irrelevant source domain collaborative information directly. In this way, introducing source domain information will not affect the integrity of the target domain user relationship. In CUT, we utilize single-domain recommendation methods as the backbone model and design a contrastive regularization loss term that forces the backbone models to retain the user similarity information for the target domain. By this means, CUT filters the irrelevant collaborative information from the source domain with explicit regulation signals. Moreover, we propose a user transformation module to depict different behavior across domains of overlapping users. Our proposed CUT framework can be seamlessly applied to various single-domain backbone models without modifying their model structure and loss terms. CUT extends them to cross-domain tasks with insignificant additional parameters and training costs.
+
+We conduct extensive experiments in six cross-domain tasks in two real-world datasets to compare the CUT framework with state-of-the-art single-domain and cross-domain baselines. The results show that CUT-enhanced single-domain backbones achieve significantly better results on cross-domain tasks compared with SOTA cross-domain baseline methods. Our main contributions can be summarized as follows:
+
+- We provide a new perspective on how negative transfer occurs in cross-domain recommendations, i.e., the distortion of user similarity relationships. The Collaborative information regularized User Transformation (CUT) framework is proposed to alleviate negative transfer by adding constraints to filter irrelevant user collaborative information.
+
+- To our knowledge, CUT is the first CDR framework that extends single-domain recommenders for multi-domain tasks without requiring modification to the backbone model structure and loss term. Thus, SOTA recommendation algorithms can be adapted for cross-domain tasks easily.
+
+- Extensive experiments on cross-domain tasks show significant improvements of CUT-enhanced single-domain backbones over SOTA cross-domain and single-domain models. The source code is anonymously released in the link below \( {}^{1} \) .
+
+## 2 RELATED WORK
+
+### 2.1 Cross Domain Recommendation
+
+Cross-domain recommendation (CDR) is proposed to enhance the performance of the target domain by utilizing data from other related domains. Recent surveys [27, 32] divide previous works by the pattern of user/item overlap and inter/intra domain task.
+
+When users and items have no overlap between two domains, researchers mainly rely on extracting implicit cluster-level patterns \( \left\lbrack  {6,{15},{25}}\right\rbrack \) or explicit tag correlations \( \left\lbrack  {5,{20}}\right\rbrack \) to exploit the interaction data from the source domain and capture cross-domain analogy. More previous studies focus on partial overlap scenarios where the shared user/items can bridge the gap between domains. Pioneering studies include CMF [26], where shared users naturally share the same embedding in the interaction matrix for both domains, and matrix factorization is performed with different weights for source and target domains. To model different behavior for the overlapped users across domains and transfer collaborative information between domains, models including DTCDR [30] and its variations \( \left\lbrack  {{31},{33}}\right\rbrack \) combine the representations for overlapped users in both domains for prediction. Another way to transfer knowledge between domains utilize the shared deep layers instead of separate representations. Typical methods under this paradigm include Conet [9], DDTCTR [18], and BiTGCF [19]. The widely used embedding and mapping paradigm includes EMCDR [22], SSCDR [11], and PTUPCDR [35], where the model first learns the latent factor representation for each domain, and then train a mapping function to establish the relationships between the latent space of domains.
+
+---
+
+\( {}^{1} \) https://anonymous.4open.science/r/CUT_anonymous-9815
+
+---
+
+Recent cross-domain recommenders have developed more complicated ways to fuse information from different domains. Most of the proposed models have well-motivated network structures and training techniques that organically utilize all three mentioned techniques: embedding combinations, shared deep layers, and embedding transformation for different domains. For example, AFT [7] learns the feature translations across domains under a generative adversarial network, and \( {\mathrm{C}}^{2} \) DSR [1] utilizes the contrastive infomax objective to enhance the correlation between specific and shared user embeddings. In addition, the well-proven attention mechanism is commonly used to generate domain-specific representations from trainable global user embeddings \( \left\lbrack  {2,7,{10},{16}}\right\rbrack \) .
+
+Most of these cross-domain recommenders rely on the overlapped users or items to directly transfer inter-domain knowledge, based on the assumption that overlap users/items have similar collaborative relationships in the source and target domain. However, as illustrated in Figure 1, this assumption is not always true. We introduce a contrastive loss term for overlap users to transfer useful source domain knowledge while keeping the user similarity relationships in the target domain.
+
+### 2.2 Negative Transfer Problem
+
+Cross-domain recommenders aim to enhance the performance of the target domain using knowledge from the source domain. Nonetheless, not all source knowledge is useful, some of which may even contain noise and hence undermine the performance. Indiscriminately transferring knowledge between domains will cause the 'negative transfer' problem [28].
+
+Previous researchers have made several attempts to transfer useful knowledge while avoiding negative transfer. CDRIB [4] encourages domain-shared information and limits domain-specific information through variational information bottleneck regulariz-ers. DisenCDR [3] also utilizes variational auto-encoders to achieve robust performance against the irrelevant data and obtain robust domain invariant user embeddings. The domain-specific attention mechanism can also alleviate the negative transfer problem. CATART [16] relies on the attention-based representation transfer to retain useful knowledge from other domains under the data isolation constraint. The recent UniCDR [2] which tackles multiple CDR tasks simultaneously addresses this problem with interaction level and domain level masking and contrastive loss to obtain robust domain-shared user representation. We notice that most previous models address the negative transfer problem using different forms of single-user representations for different domains, but they fail to model the inter-user similarity shift across domains.
+
+These cross-domain recommenders can partially mitigate the negative transfer problem. However, all these approaches only focus on adapting the representations of single users to fit in the target domain, neglecting the differences in collaborative information between users in source and target domains. Our proposed CUT framework explicitly introduces constraints to retain the user similarity relationships in the target domain, which directly filters the negative transfer information. Furthermore, most existing cross-domain recommenders have fixed model structures, which require additional effort to train and apply. In contrast, our framework can extend various single-domain recommenders to cross-domain tasks while keeping their model structure and loss terms.
+
+Table 1: Primary notations used in this paper.
+
+<table><tr><td>Notations</td><td>Definitions</td></tr><tr><td>\( \mathcal{S} = \left( {{\mathcal{U}}^{s},{I}^{s},{\mathbf{M}}^{s}}\right) \)</td><td>Source domain dataset.</td></tr><tr><td>\( {\mathcal{U}}^{s} = \left\{  {{u}_{1}^{s},\ldots ,{u}_{k}^{s}}\right\} \)</td><td>Source user set.</td></tr><tr><td>\( {\mathcal{I}}^{s} = \left\{  {{i}_{1}^{s},\ldots ,{u}_{j}^{s}}\right\} \)</td><td>Source item set.</td></tr><tr><td>\( {\mathbf{M}}^{s} \in  \{ 0,1{\} }^{k \times  j} \)</td><td>Source binary interaction matrix.</td></tr><tr><td>\( \mathcal{T} = \left( {{\mathcal{U}}^{t},{\mathcal{I}}^{t},{\mathrm{M}}^{t}}\right) \)</td><td>Target domain dataset.</td></tr><tr><td>\( {\mathcal{U}}^{t} = \left\{  {{u}_{1}^{t},\ldots ,{u}_{n}^{t}}\right\} \)</td><td>Target user set.</td></tr><tr><td>\( {I}^{t} = \left\{  {{i}_{1}^{s},\ldots ,{u}_{m}^{t}}\right\} \)</td><td>Target item set.</td></tr><tr><td>\( {\mathbf{M}}^{t} \in  \{ 0,1{\} }^{n \times  m} \)</td><td>Target binary interaction matrix.</td></tr><tr><td>\( {\mathcal{U}}^{o} = {\mathcal{U}}^{s} \cap  {\mathcal{U}}^{t} \)</td><td>Overlapped Users.</td></tr><tr><td>\( {R}_{1}\left( {u, i}\right) ,{\Phi }_{1} \)</td><td>Single-domain backbone model for phase TARGET with parameters \( {\Phi }_{1} \) .</td></tr><tr><td>\( {\Theta }_{{t}_{1}} \)</td><td>The embedding parameters of target users in phase TARGET.</td></tr><tr><td>\( {R}_{2}\left( {u, i}\right) ,{\Phi }_{2} \)</td><td>Single-domain backbone model for phase TRANSFER with parameters \( {\Phi }_{2} \) .</td></tr><tr><td>\( \Theta  = \left\{  {{\Theta }_{t},{\Theta }_{o},{\Theta }_{s}}\right\} \)</td><td>The embedding parameters of target- <br> only, overlapped, and source-only users in phase TRANSFER.</td></tr><tr><td>\( {\mathbf{u}}_{p}^{t{\Theta }_{t}} \)</td><td>User embedding of target user \( p \) in phase TRANSFER.</td></tr><tr><td>\( {\mathrm{\;L}}_{\mathrm{s}},{\mathrm{L}}_{\mathrm{t}},{\mathrm{L}}_{\mathrm{c}} \) <br> \( {\mathrm{A}}^{\gamma } \in  \{ 0,1{\} }^{n \times  n} \) <br> F</td><td>Loss term of source, target and contrastive regularization, respectively. <br> User similarity matrix with threshold \( \gamma \) . <br> User transformation layer.</td></tr></table>
+
+## 3 CUT FRAMEWORK
+
+### 3.1 Framework Overview
+
+Our notation in this paper is defined in Table 1. In the intra-domain CDR task, we intend to improve the recommendation performance on target domain \( \mathcal{T} \) with training data from both source and target domains, \( {\mathrm{M}}^{s} \) and \( {\mathrm{M}}^{t} \) .
+
+Our proposed Collaborative information regularized User Transformation (CUT) framework is shown in Figure 2. In CUT, any single-domain backbone recommender system \( R\left( {u, i}\right) \) with user and item embedding layers can be applied for the cross-domain task. We denote its parameter set as \( \Phi \) . The embedding layer parameters are expressed as \( \Theta \) .
+
+The training procedure of CUT includes two phases: First, a user similarity learning (TARGET) phase driven by target domain representation is adopted to obtain the user collaborative information in the target domain, i.e., a binary target user similarity matrix \( \mathbf{A} \in  \{ 0,1{\} }^{n \times  n} \) . At the TARGET phase, a backbone model \( {R}_{1}\left( {u, i}\right) \) with parameters \( {\Phi }_{1} \) and embedding parameters \( {\Theta }_{t1} \) is trained in the target domain. Details of this phase will be described in Section 3.2. Second, a source-target information transfer (TRANSFER) phase guided by user similarity is designed to transfer the information from the source domain while avoiding the negative transfer problem. TRANSFER is the core phase in CUT, which includes a backbone model \( {R}_{2}\left( {u, i}\right) \) with the same structure as the TARGET phase but different parameters \( {\Phi }_{2}.{R}_{2}\left( {u, i}\right) \) is trained on all data from both the source and target domains, and the target-only, overlap, and source-only embedding parameters are \( {\Theta }_{t},{\Theta }_{o} \) , and \( {\Theta }_{s} \) , respectively. We design two components to ensure that \( {R}_{2}\left( {u, i}\right) \) learns proper representations of target domain users and useful cross-domain information from the source domain: a user representation transformation layer to model user representations in the target domain (Section 3.3), and a contrastive negative transfer regularization loss term \( {\mathbf{L}}^{c} \) to retain the user similarity relationships of matrix A (Section 3.4). We will explain why this procedure alleviates negative transfer. Finally, we illustrate the model-agnostic training pipeline, which can extend arbitrary single-domain recommendation backbone \( R\left( {u, i}\right) \) to cross-domain tasks (Section 3.5).
+
+![3_148_252_1508_752_0.jpg](images/3_148_252_1508_752_0.jpg)
+
+Figure 2: An overview of Collaborative information regularized User Transformation (CUT) framework. It includes a TARGET phase to learn user similarity and a TRANSFER phase to filter useful source information to transfer to the target domain. Key components of the TRANSFER phase include a user transformation layer and a specially designed contrastive loss.
+
+### 3.2 User Similarity Learning Driven by Target Domain Representation
+
+In the TARGET phase, we aim to obtain the user collaborative information (i.e., pair-wise similarity) in the target domain. The similarity will work as an explicit supervision signal upon the final user embedding in the TRANSFER phase. We define a binary user similarity matrix \( \mathbf{A} \in  \{ 0,1{\} }^{n \times  n} \) , where \( {A}_{i, j} = 1 \) denotes user \( {u}_{i} \) and \( {u}_{j} \) are similar. A binary, rather than continuous, measure of similarity is adopted because the similarity is only an estimation of the collaborative relationship between users, and overly strict estimation would induce unnecessary or even erroneous constraints. Let \( \phi \left( {\mathbf{a},\mathbf{b}}\right)  = \frac{\mathbf{a} \cdot  {\mathbf{b}}^{T}}{\left| \mathbf{a}\right| \left| \mathbf{b}\right| } \) be the cosine similarity between two vectors a and \( \mathbf{b} \) , and \( \gamma \) be the similarity threshold as a hyper-parameter, we have two approaches to acquire the binary similarity between users,
+
+\[
+{\mathbf{A}}_{pq}^{\prime Y} = \mathbb{I}\left( {\phi \left( {{\mathbf{M}}_{p}^{t},{\mathbf{M}}_{q}^{t}}\right)  > \gamma }\right) ,\;p, q \in  \{ 1,\ldots , n\} \tag{1}
+\]
+
+\[
+{\mathrm{A}}_{pq}^{Y} = \mathbb{I}\left( {\phi \left( {{\mathbf{u}}_{p}^{t{\Theta }_{{t}_{1}}},{\mathbf{u}}_{q}^{t{\Theta }_{{t}_{1}}}}\right)  > \gamma }\right) ,\;p, q \in  \{ 1,\ldots , n\} \tag{2}
+\]
+
+The similarity in Equation 1 is based on the interaction history of the users in the target domain. Equation 2 is based on the user representations of the single-domain backbone \( {R}_{1}\left( {u, i}\right) \) with parameters \( {\Theta }_{{t}_{1}} \) which is trained on the target set in the TARGET phase as shown in Figure 2. We argue that the latter approach yields finer calibrated similarities between users because \( {\mathrm{A}}^{\gamma } \) represents the exact collaborative relationship of users that backbone model \( {R}_{1}\left( {u, i}\right) \) extracts from the target domain. Whereas, \( {\mathrm{A}}^{\prime Y} \) fails to consider the backbone model \( {\Theta }_{t1} \) . For instance, it yields the same similarity relationships for a simple backbone MF and for a stronger backbone LightGCN, which will lead to an imprecise supervision signal for the following domain-transfer phase. Therefore, we choose the similarity generated by \( {R}_{1}\left( {u, i}\right) \) as in Equation 2. Empirical results in Section 4.7 will confirm the rationality of this choice.
+
+### 3.3 User Representation Transformation Layer
+
+In the TRANSFER phase, source and target domains share the same backbone model parameter \( {\Phi }_{2} \) to exchange cross-domain information, where the overlapping users should have different representations in source and target domains to indicate the domain differences. However, simply assigning two distinct sets of embed-dings for overlapping users overlooks the sharing of information for the same users between domains.
+
+To solve this issue, we introduce a User Representation Transformation module to depict the relationship between the source and target domains of the overlapping users. To be specific, for an overlapping user \( {u}_{i}^{o} \) , we directly learn its source-domain embedding \( {\mathbf{u}}_{i}^{o{\Theta }_{o}} \) by the backbone model and adopt a transformation layer \( \mathrm{F} \) to learn its target-domain embedding \( \mathrm{F}\left( {\mathbf{u}}_{i}^{o{\Theta }_{o}}\right) \) . Note that we also transfer the non-overlap target users \( {u}^{t} \) to ensure their embeddings under the same distribution. For simplicity, we follow the efficient one-layer MLP structure for user representation transformation. The user transformation layer is activated when input user \( {u}^{t},{u}^{o} \) with embedding \( {\mathbf{u}}^{t{\Theta }_{t}},{\mathbf{u}}^{o{\Theta }_{o}} \) are from the target domain:
+
+\[
+\mathbf{F}\left( {\mathbf{u}}^{t{\Theta }_{t}}\right)  = {MLP}\left( {\mathbf{u}}^{t{\Theta }_{t}}\right)  = \mathbf{W} \cdot  {\mathbf{u}}^{t{\Theta }_{t}} + \mathbf{b} \tag{3}
+\]
+
+\[
+\mathbf{F}\left( {\mathbf{u}}^{o{\Theta }_{o}}\right)  = {MLP}\left( {\mathbf{u}}^{o{\Theta }_{o}}\right)  = \mathbf{W} \cdot  {\mathbf{u}}^{o{\Theta }_{o}} + \mathbf{b} \tag{4}
+\]
+
+Where \( \mathbf{W} \) and \( \mathbf{b} \) are learnable parameters. Afterwards, the transferred target-domain user embeddings will be fed into backbone \( {R}_{2}\left( {u, i}\right) \) , and share parameters with the source-domain interactions. The adaptation module works as an identifier of the domain, which allows CUT to model different user behaviors across domains while keeping useful domain-shared knowledge of users. Note that no transformation is adopted for the item embeddings since items in source and target domains lie in different spaces naturally.
+
+### 3.4 Contrastive Negative Transfer Regularization Loss
+
+According to our experiments, the negative transfer severely degrades the performance when single-domain approaches are directly applied to cross-domain scenarios. This issue is partially addressed by the above user transformation layer since it considers the differences of overlapping users across domains. However, only modeling single-user transformation is not enough, since it is still under the basic assumption that overlapped users share similarity relationships across domains, which may still cause negative transfer as we illustrated in Figure 1.
+
+To further eliminate the negative transfer issue, we propose an additional loss term based on the supervised contrastive learning mechanism [12] to regularize the collaborative information (i.e., similarity) of user representations. Because we only focus on the performance of the target domain, the collaborative information in the target domain is essential. Thus, the goal of our contrastive regularization loss term is to ensure that the user similarity relationships of the target domain users will not drift away under the incoming source domain information. This loss term mainly guides the training process of the user transformation layer \( \mathbf{F} \) , which is also only activated for the target-domain users \( {\mathcal{U}}^{t} \) . Specifically, for each target mini-batch \( b \in  {B}^{t} \) with user set \( {U}_{b} \) , we extract target user pairs (including target and overlapping users) according to the binary target user similarity matrix \( {\mathbf{A}}^{Y} \) ,
+
+\[
+{S}_{b} = \left\{  {\left( {{u}_{i}^{t},{u}_{j}^{t}}\right)  \mid  \left( {{u}_{i}^{t},{u}_{j}^{t} \in  {U}_{b}, i \neq  j}\right)  \land  \left( {{\mathrm{A}}_{ij}^{Y} = 1}\right) }\right\} \tag{5}
+\]
+
+\[
+{A}_{b} = \left\{  {\left( {{u}_{x}^{t},{u}_{y}^{t}}\right)  \mid  {u}_{x}^{t},{u}_{y}^{t} \in  {U}_{b}, x \neq  y}\right\} \tag{6}
+\]
+
+Algorithm 1: Training Process of Collaborative information regularized User Transformation (CUT).
+
+---
+
+TARGET PHASE
+
+Input: Target user set \( {\mathcal{U}}^{t} \) , Target item set \( {\mathcal{I}}^{t} \) , Target
+
+				interaction matrix \( {\mathrm{M}}^{t} \) , Similarity threshold \( \gamma \)
+
+Output: Target binary user similarity matrix \( {\mathbf{A}}^{Y} \)
+
+Train a backbone model \( {R}_{1}\left( {u, i}\right) \) with \( {\Phi }_{1} \) on the target
+
+	domain \( \left( {{\mathcal{U}}^{t},{\mathcal{I}}^{t},{\mathrm{M}}^{t}}\right) \) with loss \( {\mathrm{L}}^{t * } \) ;
+
+Derive target user similarity matrix \( {\mathbf{A}}^{\gamma } \) by Equation 2;
+
+TRANSFER PHASE
+
+Input: Source &target domain data \( \left( {{\mathcal{U}}^{s},{\mathcal{I}}^{s},{\mathbf{M}}^{s}}\right) \) ,
+
+					\( \left( {{\mathcal{U}}^{t},{\mathcal{I}}^{t},{\mathbf{M}}^{t}}\right) \) , Hyper-parameters \( \alpha ,\lambda \)
+
+Output: Backbone model parameters \( {\Phi }_{2} \) ; User
+
+						transformation Layer F; User & item embeddings
+
+					\( {\mathbf{u}}^{\Theta },{\mathbf{i}}^{\Theta } \)
+
+Train a backbone model \( {R}_{2}\left( {u, i}\right) \) on both domain with
+
+	contrastive loss term, target prediction loss and source
+
+	prediction loss \( {\mathbf{L}}^{all} = \left( {1 - \alpha }\right) {\mathbf{L}}^{t} + \alpha {\mathbf{L}}^{s} + \lambda {\mathbf{L}}^{c} \) ;
+
+---
+
+Where \( {S}_{b} \) denotes similar user pairs, and \( {A}_{b} \) denotes all user pairs. Afterward, we optimize a contrastive loss \( {\mathbf{L}}^{c} \) to guide the transformed target user representations to retain the user similarity relationships of the original target domain information,
+
+\[
+{\mathbf{L}}^{c} = \mathop{\sum }\limits_{{b \in  {B}^{t}}} - \frac{1}{\left| {S}_{b}\right| }\mathop{\sum }\limits_{{\left( {{u}_{i}^{t},{u}_{j}^{t}}\right)  \in  {S}_{b}}}\log \frac{\left| {A}_{b}\right| \exp \left( {\mathrm{F}\left( {\mathbf{u}}_{i}^{t{\Theta }_{t}}\right)  \cdot  \mathrm{F}\left( {\mathbf{u}}_{j}^{t{\Theta }_{t}}\right) /\tau }\right) }{\mathop{\sum }\limits_{{\left( {{u}_{x}^{t},{u}_{y}^{t}}\right)  \in  {A}_{b}}}\exp \left( {\mathrm{F}\left( {\mathbf{u}}_{x}^{t{\Theta }_{t}}\right)  \cdot  \mathrm{F}\left( {\mathbf{u}}_{y}^{t{\Theta }_{t}}\right) /\tau }\right) }
+\]
+
+(7)
+
+Where temperature \( \tau \) is a hyper-parameter. \( {\mathrm{L}}^{c} \) in Equation 7 decreases when originally similar users in the target domain are still similar after being transformed to the source domain space, while increases when the similarity relationship is changed after transformation. This contrastive negative transfer regularization loss term guarantees that although the source domain version representation of overlapped user \( {u}^{o} \) , i.e. \( {\mathbf{u}}^{o{\Theta }_{o}} \) , involves in the source domain training process, the transformed target domain version user representation \( \mathrm{F}\left( {\mathbf{u}}^{o{\Theta }_{o}}\right) \) and \( \mathrm{F}\left( {\mathbf{u}}^{t{\Theta }_{t}}\right) \) will retain its similarity relationships in the target domain. Note that the mini-batch may contain repeating user IDs (i.e. when \( {u}_{i}^{t} = {u}_{j}^{t} \) ). We filtered these user pairs out of \( {S}_{b} \) and all user pair sets, because these same-user pairs do not provide meaningful supervision signals.
+
+### 3.5 Training Process for CUT
+
+As illustrated in Algorithm 1, the training process is divided into two phases: TARGET and TRANSFER. The TARGET phase outputs the target binary user similarity matrix \( {\mathbf{A}}^{Y} \) . For any single-domain recommendation model \( R\left( {u, i}\right) \) , we first train a backbone model \( {R}_{1}\left( {u, i}\right) \) with parameter \( {\Phi }_{1} \) on the target domain to get the target user embeddings \( {\mathbf{u}}^{t{\Theta }_{t1}} \) with parameters \( {\Theta }_{t1} \) . Then the binary similarity matrix \( {\mathbf{A}}^{\gamma } \) is derived from Equation 2. The TRANSFER phase induces useful source-domain knowledge into the model with the user transformation layer and the contrastive negative transfer regularization loss. In this phase, we train another backbone model \( {R}_{2}\left( {u, i}\right) \) (with the same structure as \( {R}_{1}\left( {u, i}\right) \) ) with \( {\Phi }_{2} \) on data from both source and target domains. During training \( {R}_{2}\left( {u, i}\right) \) , each mini-batch contains a batch of interactions from the source domain and a batch from the target domain. For the target domain interactions, every user embedding \( {\mathbf{u}}^{t{\Theta }_{t}} \) will first be transformed by the user transformation layer \( \mathbf{F} \) , and then fed into the backbone model. These two batches yield the prediction losses on the source domain \( {\mathbf{L}}^{s} \) and target domain \( {\mathbf{L}}^{t} \) respectively. The form of prediction loss depends on the backbone model. The final loss term consists of three terms as in Equation 8: source domain prediction loss \( {\mathrm{L}}^{s} \) , target domain prediction loss \( {\mathbf{L}}^{t} \) , and contrastive loss \( {\mathbf{L}}^{c} \) from Equation 7.
+
+\[
+{\mathbf{L}}^{\mathrm{{all}}} = \left( {1 - \alpha }\right) {\mathbf{L}}^{t} + \alpha {\mathbf{L}}^{s} + \lambda {\mathbf{L}}^{c} \tag{8}
+\]
+
+Where \( \alpha \) and \( \lambda \) are both hyper-parameters that denote the weights of each part of losses.
+
+## 4 EXPERIMENTS
+
+In this section, we conduct extensive experiments on six cross-domain tasks from two real-world datasets and compare the performance of our CUT framework with state-of-the-art single and cross-domain recommenders on the target domain. We aim to answer the following research questions:
+
+RQ1: How well does CUT perform compared to the SOTA single and cross-domain baselines?
+
+RQ2: Does CUT alleviate the negative transfer problem?
+
+RQ3: How does target-driven user similarity take effect on cross-domain recommendation performance?
+
+### 4.1 Experimental Settings
+
+4.1.1 Datasets & Evaluation Metrics. We use three pairs of domains on two real-world cross-domain datasets to evaluate the performance of the CUT framework and other baselines. Each one in the domain pairs is treated as the target domain for a cross-domain task, adding up to six cross-domain tasks in all.
+
+- Amazon dataset \( {}^{2} \) : It is a large-scale e-commerce dataset with item interactions from multiple domains. We choose two pairs of domains, Cloth&Sports, and Cloth&Video, and perform cross-domain recommendations respectively. Cloth and Sports are more closely related while Cloth and Video share less cross-domain knowledge.
+
+- Douban dataset \( {}^{3} \) : Douban is a music and movie online platform, where we consider two cross-domain tasks with music and movie as target/source domains, respectively.
+
+Both datasets are widely used for cross-domain recommendation models \( \left\lbrack  {2,3,{16},{19}}\right\rbrack \) . Following the previous work, we transform the ratings into implicit data where each entry is marked as 0 or 1 according to whether the user has interacted with the item. We filter the dataset to keep users and items with at least 5 interactions and split the user history with the ratio of \( 8 : 1 : 1 \) for training, validation, and testing in the target domain for each user. The source domain is split by 8:2 for training and validation for fair comparisons with some previous CDR methods with source phases. The dataset statistics are listed in Table 2. For evaluation, a full ranking setting is utilized, where the recommendation is conducted on all items in the datasets. We evaluate all CDR tasks by HR@10 and NDCG@10 on the target domain; both are commonly used evaluation metrics.
+
+Table 2: Dataset statistics. The subscript \( o \) indicates overlap.
+
+<table><tr><td>Dataset</td><td>Domain</td><td>\( \left| \mathcal{U}\right| \)</td><td>| I |</td><td>#Clicks</td><td>\( \left| {\mathcal{U}}_{o}\right| \)</td><td>\( \left| {I}_{o}\right| \)</td></tr><tr><td rowspan="4">Amazon</td><td>Sports</td><td>35,599</td><td>18,358</td><td>296,337</td><td rowspan="2">3,908</td><td rowspan="2">704</td></tr><tr><td>Cloth</td><td>39,388</td><td>23,034</td><td>278,677</td></tr><tr><td>Video</td><td>24,034</td><td>10,673</td><td>231,780</td><td rowspan="2">999</td><td rowspan="2">0</td></tr><tr><td>Cloth</td><td>39,388</td><td>23,034</td><td>278,677</td></tr><tr><td rowspan="2">Douban</td><td>Music</td><td>16,041</td><td>40,405</td><td>1,140,090</td><td rowspan="2">14,000</td><td rowspan="2">0</td></tr><tr><td>Movie</td><td>22,254</td><td>27,432</td><td>2,760,500</td></tr></table>
+
+4.1.2 Compared Baselines. Our CUT framework is applied to two single-domain backbones and compared against the SOTA cross-domain baselines. All compared methods are listed below.
+
+Single-domain baselines are trained solely on the target dataset:
+
+- MF [14] is the classic matrix factorization model that first represents users and items with latent factors.
+
+- LightGCN [8] is a well-known effective baseline for top-K recommendation that models collaborative information using a simplified graph convolutional network.
+
+We also evaluate the performance of directly training our single-domain backbones on both domains, where overlapped users/items share the same embedding. These straightforward attempts utilize collaborative information from the source domain without filtering, neglecting the negative transfer problem.
+
+- CMF [26] is a often-compared classical cross-domain recommender. It is MF trained on both domains with different weights in prediction loss.
+
+- LightGCN is also adopted for training on both domains. The prediction loss is also differently weighted between domains.
+
+For cross-domain baselines, we compare our CUT framework with classical (EMCDR, DTCDR) and SOTA algorithms (UniCDR, CAT-ART) that consider the negative transfer problem.
+
+- EMCDR [22] first proposes the embedding and mapping framework where a mapping function is trained to project source user embeddings to the target domain.
+
+- DTCDR [30] combines the representation of overlapping users to learn the domain-shared knowledge.
+
+- CAT-ART [16] tackles the negative transfer problem with a robust global user representation and an attention-based representation transfer module.
+
+- UniCDR [2] transfers the most relevant domain-shared information across domains by its domain-shared and specific user embeddings and encourages the information transfer using interaction-level contrastive learning.
+
+For the proposed CUT framework, we use two single-domain approaches as backbones for CUT, namely CUT-MF and CUT-LightGCN. Surprisingly, even classical single-domain backbones obtain competitive or even better performance against the latest cross-domain ones after being enhanced by our CUT framework.
+
+4.1.3 Implementation Details. For a fair comparison, we conduct a grid search for the hyper-parameters for all baselines in the open-source RecBoleCDR [29] library. The embedding size is fixed at 64 for all models. In our proposed CUT framework, the batch size is 2048, the learning rate of Adam [13] optimizer is set as 0.001 , the domain weight factor \( \alpha \) is 0.2, and the cosine similarity threshold \( \gamma \) is 0.9 . The weight of contrastive loss term \( \lambda \) is 1e-4 for the Amazon dataset and 5e-5 for the Douban dataset, which is chosen by log-scaled grid search. The weight decay is set to 1e-6 for the Amazon dataset and 1e-7 for Douban after grid search, and after comparison, we adopt binary cross entropy loss for the Amazon dataset and Bayesian Personalized Ranking (BPR) loss [24] for Douban. As illustrated in Section 3.4, user similarity is only needed for target users that co-exist in each mini-batch in phase TRANSFER. Therefore, in practice, our framework does not maintain the whole similarity matrix with \( {\left| U\right| }^{2} \) elements. Only the fixed target user embedding from Phase TARGET is saved for calculating cosine similarity. We also track the time cost of CUT-LightGCN and LightGCN trained on both datasets for the Amazon Cloth & Sports dataset. The mean time cost of a training epoch is \( {5.13}\mathrm{\;s} \) and \( {4.87}\mathrm{\;s} \) respectively. Our framework induces controllable time and space consumption to the single-domain backbone. We have released the source code anonymously in the link below \( {}^{4} \) .
+
+---
+
+\( {}^{2} \) http://jmcauley.ucsd.edu/data/amazon/index_2014.html
+
+\( {}^{3} \) https://recbole.s3-accelerate.amazonaws.com/CrossDomain/Douban.zip
+
+---
+
+Table 3: Performance comparisons on six cross-domain tasks. * shows statistical significance (paired t-test with p-value < 0.05). The best performance is in bold, and the second-best results are underlined.
+
+<table><tr><td rowspan="3">Dataset</td><td rowspan="3">Domain: Source \( \rightarrow \) Target</td><td rowspan="3">Metrics (@10)</td><td colspan="4">Single Domain Methods</td><td rowspan="2" colspan="4">Cross Domain Methods</td><td colspan="2" rowspan="2">Our Methods</td></tr><tr><td colspan="2">Trained on Target Domain</td><td colspan="2">Trained on Both Domains</td></tr><tr><td>MF</td><td>LightGCN</td><td>CMF</td><td>LightGCN</td><td>EMCDR</td><td>DTCTR</td><td>CAT-ART</td><td>UniCDR</td><td>CUT-MF</td><td>CUT-LightGCN</td></tr><tr><td rowspan="8">Amazon</td><td>Cloth</td><td>Recall</td><td>0.0492</td><td>0.0604</td><td>0.0545</td><td>0.0614</td><td>0.0538</td><td>0.0558</td><td>0.0515</td><td>0.0624</td><td>0.0601</td><td>0.0653*</td></tr><tr><td>\( \rightarrow \) Sports</td><td>NDCG</td><td>0.0270</td><td>0.0331</td><td>0.0293</td><td>0.0335</td><td>0.0288</td><td>0.0332</td><td>0.0276</td><td>0.0340</td><td>0.0335</td><td>0.0364*</td></tr><tr><td>Sports</td><td>Recall</td><td>0.0243</td><td>0.0385</td><td>0.0291</td><td>0.0421</td><td>0.0234</td><td>0.0263</td><td>0.024</td><td>0.0433</td><td>0.0393</td><td>0.0441*</td></tr><tr><td>\( \rightarrow \) Cloth</td><td>NDCG</td><td>0.0137</td><td>0.0207</td><td>0.0157</td><td>0.0231</td><td>0.0127</td><td>0.0141</td><td>0.0130</td><td>0.0239</td><td>0.0222</td><td>0.0252*</td></tr><tr><td>Cloth</td><td>Recall</td><td>0.1153</td><td>0.1181</td><td>0.1194</td><td>0.1171</td><td>0.1165</td><td>0.1085</td><td>0.1133</td><td>0.1249</td><td>0.1275</td><td>0.1303*</td></tr><tr><td>\( \rightarrow \) Video</td><td>NDCG</td><td>0.0623</td><td>0.0639</td><td>0.0644</td><td>0.0639</td><td>0.0633</td><td>0.0584</td><td>0.0609</td><td>0.0684</td><td>0.0704</td><td>0.0720*</td></tr><tr><td>Video</td><td>Recall</td><td>0.0243</td><td>0.0385</td><td>0.0246</td><td>0.0379</td><td>0.0232</td><td>0.0241</td><td>0.0245</td><td>0.0349</td><td>0.0362</td><td>0.0381</td></tr><tr><td>\( \rightarrow \) Cloth</td><td>NDCG</td><td>0.0137</td><td>0.0207</td><td>0.0136</td><td>0.0206</td><td>0.0124</td><td>0.0126</td><td>0.0123</td><td>0.0191</td><td>0.0203</td><td>0.0213</td></tr><tr><td rowspan="4">Douban</td><td>Movie</td><td>Recall</td><td>0.1004</td><td>0.1069</td><td>0.0944</td><td>0.0972</td><td>0.1014</td><td>0.0881</td><td>0.0901</td><td>0.1073</td><td>0.1238</td><td>0.1205</td></tr><tr><td>\( \rightarrow \) Music</td><td>NDCG</td><td>0.0733</td><td>0.0806</td><td>0.0725</td><td>0.0772</td><td>0.0756</td><td>0.0658</td><td>0.0685</td><td>0.0754</td><td>0.0952*</td><td>0.0946</td></tr><tr><td>Music</td><td>Recall</td><td>0.1053</td><td>0.1004</td><td>0.0946</td><td>0.0966</td><td>0.1064</td><td>0.0943</td><td>0.1055</td><td>0.1095</td><td>0.1390</td><td>0.1393*</td></tr><tr><td>\( \rightarrow \) Movie</td><td>NDCG</td><td>0.0997</td><td>0.0997</td><td>0.1031</td><td>0.1096</td><td>0.1156</td><td>0.0982</td><td>0.1048</td><td>0.0994</td><td>0.1413</td><td>0.1437*</td></tr></table>
+
+### 4.2 Overall Performance (RQ1)
+
+To answer RQ1, we compare our CUT framework with other single-domain and state-of-the-art cross-domain baselines on six domain transfer tasks of two datasets. Performances of target domain recommendation on six tasks are shown in Table 3, respectively.
+
+According to the results, our CUT framework consistently yields better performance due to the explicit regularization of the user similarity relationships across domains. In Amazon Cloth & Video and Douban datasets, the relationship between domains is relatively distinct. Therefore, our CUT framework significantly outperforms the best baseline by a large margin (15% Recall and 18% NDCG for Douban Movie \( \rightarrow \) Music), for the CUT framework is more robust against irrelevant information from the source dataset, and it utilizes the dense source dataset better by retaining more useful knowledge because of the user transformation layer. When the domains are complementary and relatively sparse, i.e. Amazon Sports and Cloth dataset, CUT still achieves 7% better NDCG and 4.6% better Recall value than the best baseline. Generally, CUT benefits from a stronger backbone, because a stronger backbone offers finer-grained collaborative knowledge modeling. In addition, a stronger backbone provides more accurate user similarity relationships while pre-training. LightGCN outperforms MF greatly when the dataset is relatively sparse, while on dense datasets, the performance of LightGCN and MF shares little difference. The Douban dataset is denser than the Amazon dataset. In addition, MF has a very simple model structure (the multiplication of user & item embeddings), which means that the direct constraint on the target user embed-dings in CUT contributes more to the final results. Thus, CUT-MF achieves better results in the Douban Movie & Music dataset.
+
+Therefore, we have Answer to RQ1: The proposed CUT framework outperforms SOTA baselines significantly on most evaluation metrics on six CDR tasks from two real-world datasets.
+
+Since CUT shows similar performance improvement on two backbones, we adopt LightGCN as the backbone for the CUT framework in the following analyses.
+
+### 4.3 Model Performance on Sparse Target Domain Data (RQ1)
+
+In common practice, cross-domain models often aim at transferring knowledge from domains with abundant data to sparse domains. To examine the performance of CUT and other baselines under this scenario (RQ1), we study the effect of different training data sizes of the target domain. While keeping other configurations fixed, we sample the target domain training set to retain different fractions of interactions. As shown in Figure 3, our CUT framework outperforms the best baseline UniCDR and LightGCN trained on both training datasets, when we retain at least 20% of the interactions. Note that the comparison is based on the complete target domain test set, and our user similarity regularization term is derived from the sampled target domain training set. Therefore, random sampling will undermine the performance of our CUT framework, which leads to smaller improvements in the sparse target datasets. However, even in the worst case, our regularization term does not degrade target domain performance. The reason is that the sparse target training set belongs to the same distribution as the test set, so the derived target-user similarity relationship is less informative but still unbiased.
+
+---
+
+\( {}^{4} \) https://anonymous.4open.science/r/CUT_anonymous-9815
+
+---
+
+![7_163_238_693_286_0.jpg](images/7_163_238_693_286_0.jpg)
+
+Figure 3: Performance on sparse target domain dataset. We randomly sample the target Amazon Sports training dataset interactions with different retain fractions, while fixing the source Amazon Cloth dataset and the target test dataset.
+
+### 4.4 The Negative Transfer Problem (RQ2)
+
+Comparing the results of single domain methods trained on the target domain and both domains, we find that negative transfer indeed happens. For, training on both domains will lead to worse performance on Amazon Cloth and Video, as well as Douban Movie and Music as shown in Table 3. For Amazon Cloth and Video, it results from the far domain relationship. For Douban, especially Douban Movie, the source & target domain datasets have less sparsity, where a single domain model is already enough for the target dataset, and a dense source-domain dataset may induce more source-domain exclusive collaborative knowledge. From Table 3, introducing source domain collaborative information without filtering degrades target performance in the above scenarios. Our CUT framework significantly outperforms the corresponding single-domain backbone trained on both domains, which indicates that CUT can precisely identify useful source knowledge based on the target user similarity. Generally, existing cross-domain baselines outperform single-domain methods, especially the DTCDR and UniCDR. However, neglecting the user similarity relationship shift across domains still undermines their performance, especially when the source dataset provides less useful information.
+
+The first part of the Answer to RQ2: Experimental results empirically verify that our framework is effective towards the negative transfer problem, CUT performs well both when the source dataset is closely related to the target dataset or otherwise.
+
+### 4.5 Negative Transfer Case Study (RQ2)
+
+We further conduct a case study demonstrating how our CUT framework addresses the negative transfer issue by maintaining target user similarity (RQ2). As shown in Table 4, we choose two overlapping users \( {u}_{1} \) and \( {u}_{2} \) from the source domain AmazonCloth and the target domain AmazonSports. We represent users' preferences with the five most popular item tags from all their historical interactions, and similarity between users is calculated by the overlapping ratio of the 5 tags. We also obtain the five most popular item tags from the top ten items generated by the recommendation model to represent model-predicted user preference. The training history indicates that \( {u}_{1} \) and \( {u}_{2} \) share similar interests in the source domain but have distinct preferences in the target domain. The strongest cross-domain baseline UniCDR transfers the user similarity in the source domain to the target domain, leading to inaccurate similar predictions in the target domain. In contrast, our CUT Framework can keep the target-domain user similarities from being affected by the irrelevant source-domain user collaborative information. The item tags in the result list are colored red if it is also included in the testing ground truth. From Table 4, UniCDR generates similar items for \( {u}_{1} \) and \( {u}_{2} \) based on their similar preference in the source domain. However, its lack of filtering irrelevant source knowledge partially sacrifices the accuracy of \( {u}_{2} \) in the target domain.
+
+Second part of the Answer to RQ2: The case study shows that compared to UniCDR, the CUT framework is more robust to irrelevant source-domain user collaborative information.
+
+### 4.6 Ablation Studies on TRANSFER phase (RQ3)
+
+To answer RQ3, we conduct ablation studies on all six CDR tasks in Figure 4. Specifically, we compare the target domain performance of the following variants of our CUT framework:
+
+CUT w/o target driven user similarity module: CUT without the guidance from the user similarity-based loss term \( {\mathrm{L}}^{c} \) .
+
+CUT w/o user representation transform: CUT without the user representation transformation layer. Then the same user embedding is used to represent user behaviors in separate domains.
+
+CUT: The complete version of the CUT framework that adopts the LightGCN as the single-domain backbone.
+
+In most cases, the lack of contrastive loss term will cause a severe drop in performance, which is even worse than simply training an MF model on the target domain. This indicates that the framework can not learn suitable addition parameters in the user transformation layer for the target domain without additional supervision signals to amplify the target-domain user similarity relationships. The CUT framework without the transform layer shares its user representation across domains. In other words, overlapped users do not have double versions of user representations as described in Section 3.3. The lack of the transformation layer \( \mathrm{F} \) results in a limited capacity for modeling user behaviors. This forces the model to learn a user embedding that is suitable for both domains, which is sub-optimal because users behave differently across domains naturally. However, the contrastive loss term assures that the model remembers the target-domain user similarity relationships. Therefore, its performance drops slightly in most cases.
+
+### 4.7 Backbone Model-based User Similarity Learning in TARGET phase (RQ3)
+
+For the TARGET phase, we illustrate how the user similarity matrix contributes to CDR tasks by comparing the backbone-driven (Eq.2) and history-driven (Eq.1) similarity (RQ3). As shown in Figure 5, the similarity matrix derived by the user embeddings trained by the backbone model on the target dataset consistently achieves better results than the history-based similarity matrix on six CDR tasks. As we explained in Section 3.2, simply calculating cosine distance based on one-hot user interaction history yields a static similarity matrix for different single-domain backbones, which leads to sub-optimal user similarity relationship modeling than backbone-adaptive ones.
+
+Table 4: Case study on a pair of users \( \left( {{u}_{1},{u}_{2}}\right) \) . TagSim represents the overlap ratio of the 5 most popular tags between the two users. Tags with red color in two result lists are the ones matching the tags of the target domain ground truth. \( {u}_{1} \) and \( {u}_{2} \) have similar preferences on the source domain and different preferences on the target domain. The recommendation results from our CUT framework provide different items for \( {u}_{1} \) and \( {u}_{2} \) in the target domain, while the SOTA cross-domain model UniCDR generates similar target-domain recommendations.
+
+<table><tr><td>Setting</td><td colspan="5">Five Most Popular Tags</td><td>TagSim \( \left( {{\mathrm{u}}_{1},{\mathrm{u}}_{2}}\right) \)</td></tr><tr><td>Source Domain</td><td>\( {u}_{1} \) : Novelty</td><td>Jewelry</td><td>Sweatshirts</td><td>Running</td><td>Petite</td><td rowspan="2">0.80</td></tr><tr><td>Training History</td><td>\( {u}_{2} \) : Novelty</td><td>Jewelry</td><td>Sweatshirts</td><td>Running</td><td>Athletic</td></tr><tr><td>Target Domain</td><td>\( {u}_{1} \) : Accessories</td><td>Boot Shop</td><td>Women</td><td>Running</td><td>Petite</td><td rowspan="2">0.00</td></tr><tr><td>Training History</td><td>\( {u}_{2} \) : Fishing Gloves</td><td>Outdoor Gear</td><td>Men</td><td>Fishing</td><td>Hunting</td></tr><tr><td>Target Domain</td><td>\( {u}_{1} \) :Accessories</td><td>Pants</td><td>Women</td><td>Running</td><td>Fan Shop</td><td rowspan="2">0.20</td></tr><tr><td>Testing Ground Truth</td><td>\( {u}_{2} \) : Exercise</td><td>Fitness</td><td>Outdoor Gear</td><td>Camping</td><td>Fan Shop</td></tr><tr><td rowspan="2">Target Domain Results by UniCDR</td><td>\( {u}_{1} \) : Accessories</td><td>Socks</td><td>Women</td><td>Running</td><td>Petite</td><td rowspan="2">0.60</td></tr><tr><td>\( {u}_{2} \) : Accessories</td><td>Snowshoes</td><td>Women</td><td>Running</td><td>Fishing</td></tr><tr><td rowspan="2">Target Domain Results by CUT-LightGCN</td><td>\( {u}_{1} \) : Accessories</td><td>Pants</td><td>Team Sports</td><td>Running</td><td>Sunglasses</td><td rowspan="2">0.00</td></tr><tr><td>\( {u}_{2} \) : Gun Storage&Safes</td><td>Outdoor Gear</td><td>Camping</td><td>First Aid Kits</td><td>Nets</td></tr></table>
+
+![8_180_989_663_636_0.jpg](images/8_180_989_663_636_0.jpg)
+
+Figure 4: Ablation study of the target-driven user similarity module and user representation transformation module in TRANSFER phase.
+
+From the above two subsections, we have Answer to RQ3: The guidance of target-driven user similarity in CUT is crucial during the learning process of cross-domain user representation. Furthermore, the user similarity that corresponds with the backbone recommendation model achieves better performance than the simple history-based user similarity.
+
+![8_959_990_666_642_0.jpg](images/8_959_990_666_642_0.jpg)
+
+Figure 5: Performance comparisons of the user history-based similarity and the backbone-driven similarity.
+
+## 5 CONCLUSION
+
+In this paper, we provide a novel perspective on the negative transfer issue in cross-domain recommendation (CDR) tasks, i.e., the distortion of user similarity relationships. Then we propose a
+
+Collaborative information regularized User Transformation (CUT) framework to alleviate negative transfer by directly filtering source-domain user collaborative information with target-domain user similarity constraints. In CUT, a two-phase training process is adopted to learn user similarities in the target domain (TARGET phase), and then selectively transfer useful information from the source domain (TRANSFER phase). Specifically, we design a user transformation layer and a contrastive loss to constrain the representations of overlap users, which help maintain the user relationships in the target domain when introducing source-domain information. We conduct extensive experiments on real-world datasets, where CUT shows significant improvements to backbone models, as well as compared with state-of-the-art single and cross-domain baselines. Further comparisons and analyses also illustrate that CUT effectively filters out irrelevant source user collaborative information, and thus successfully alleviates the negative transfer issue. As a framework, CUT enhances the cross-domain performance for various single-domain recommenders, while keeping their model structures and loss terms. We believe there will be more attempts to apply single-domain recommendation models for CDR tasks.
+
+## REFERENCES
+
+[1] Jiangxia Cao, Xin Cong, Jiawei Sheng, Tingwen Liu, and Bin Wang. 2022. Contrastive Cross-Domain Sequential Recommendation. In Proceedings of the 31st ACM International Conference on Information & Knowledge Management. ACM, Atlanta GA USA, 138-147. https://doi.org/10.1145/3511808.3557262
+
+[2] Jiangxia Cao, Shaoshuai Li, Bowen Yu, Xiaobo Guo, Tingwen Liu, and Bin Wang. 2023. Towards Universal Cross-Domain Recommendation. In Proceedings of the Sixteenth ACM International Conference on Web Search and Data Mining. ACM, Singapore Singapore, 78-86. https://doi.org/10.1145/3539597.3570366
+
+[3] Jiangxia Cao, Xixun Lin, Xin Cong, Jing Ya, Tingwen Liu, and Bin Wang. 2022. DisenCDR: Learning Disentangled Representations for Cross-Domain Recommendation. In Proceedings of the 45th International ACM SIGIR Conference on Research and Development in Information Retrieval. ACM, Madrid Spain, 267-277. https://doi.org/10.1145/3477495.3531967
+
+[4] Jiangxia Cao, Jiawei Sheng, Xin Cong, Tingwen Liu, and Bin Wang. 2022. Cross-Domain Recommendation to Cold-Start Users via Variational Information Bottleneck. 2022 IEEE 38th International Conference on Data Engineering (ICDE) (2022). https://doi.org/10.48550/arXiv.2203.16863
+
+[5] Manuel Enrich, Matthias Braunhofer, and Francesco Ricci. 2013. Cold-Start Management with Cross-Domain Collaborative Filtering and Tags. In International Conference on Electronic Commerce and Web Technologies.
+
+[6] Sheng Gao, Hao Luo, Da Chen, Shantao Li, Patrick Gallinari, and Jun Guo. 2013. Cross-Domain Recommendation via Cluster-Level Latent Factor Model. In ECML/PKDD.
+
+[7] Xiaobo Hao, Yudan Liu, Ruobing Xie, Kaikai Ge, Linyao Tang, Xu Zhang, and Leyu Lin. 2021. Adversarial Feature Translation for Multi-domain Recommendation. In Proceedings of the 27th ACM SIGKDD Conference on Knowledge Discovery & Data Mining. ACM, Virtual Event Singapore, 2964-2973. https://doi.org/10.1145/ 3447548.3467176
+
+[8] Xiangnan He, Kuan Deng, Xiang Wang, Yan Li, Yongdong Zhang, and Meng Wang. 2020. LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation. Proceedings of the 43rd International ACM SIGIR Conference on Research and Development in Information Retrieval (2020).
+
+[9] Guangneng Hu, Yu Zhang, and Qiang Yang. 2018. CoNet: Collaborative Cross Networks for Cross-Domain Recommendation. In Proceedings of the 27th ACM International Conference on Information and Knowledge Management. ACM, Torino Italy, 667-676. https://doi.org/10.1145/3269206.3271684
+
+[10] Yuchen Jiang, Qi Li, Han Zhu, Jinbei Yu, Jin Li, Ziru Xu, Huihui Dong, and Bo Zheng. 2022. Adaptive Domain Interest Network for Multi-domain Recommendation. In Proceedings of the 31st ACM International Conference on Information & Knowledge Management. ACM, Atlanta GA USA, 3212-3221. https: //doi.org/10.1145/3511808.3557137
+
+[11] SeongKu Kang, Junyoung Hwang, Dongha Lee, and Hwanjo Yu. 2019. Semi-Supervised Learning for Cross-Domain Recommendation to Cold-Start Users. Proceedings of the 28th ACM International Conference on Information and Knowledge Management (2019).
+
+[12] Prannay Khosla, Piotr Teterwak, Chen Wang, Aaron Sarna, Yonglong Tian, Phillip Isola, Aaron Maschinot, Ce Liu, and Dilip Krishnan. 2020. Supervised Contrastive Learning. ArXiv abs/2004.11362 (2020).
+
+[13] Diederik P. Kingma and Jimmy Ba. 2014. Adam: A Method for Stochastic Optimization. CoRR abs/1412.6980 (2014).
+
+[14] Yehuda Koren, Robert M. Bell, and Chris Volinsky. 2009. Matrix Factorization Techniques for Recommender Systems. Computer 42 (2009).
+
+[15] Bin Li, Qiang Yang, and X. Xue. 2009. Can Movies and Books Collaborate? Cross-Domain Collaborative Filtering for Sparsity Reduction. In International Joint Conference on Artificial Intelligence.
+
+[16] Chenglin Li, Yuanzhen Xie, Chenyun Yu, Bo Hu, Zang li, Guoqiang Shu, Xiaohu Qie, and Di Niu. 2022. One for All, All for One: Learning and Transferring User Embeddings for Cross-Domain Recommendation. https://doi.org/10.1145/ 3539597.3570379 arXiv:2211.11964 [cs].
+
+[17] Chenglin Li, Mingjun Zhao, Huanming Zhang, Chenyun Yu, Lei Cheng, Guo-qiang Shu, BeiBei Kong, and Di Niu. 2022. RecGURU: Adversarial Learning of Generalized User Representations for Cross-Domain Recommendation. Proceedings of the Fifteenth ACM International Conference on Web Search and Data Mining (Feb. 2022), 571-581. https://doi.org/10.1145/3488560.3498388 Conference Name: WSDM '22: The Fifteenth ACM International Conference on Web Search and Data Mining ISBN: 9781450391320 Place: Virtual Event AZ USA Publisher: ACM.
+
+[18] P. Li and Alexander Tuzhilin. 2019. DDTCDR: Deep Dual Transfer Cross Domain Recommendation. Proceedings of the 13th International Conference on Web Search and Data Mining (2019).
+
+[19] Meng Liu, Jianjun Li, Guohui Li, and Peng Pan. 2020. Cross Domain Recommendation via Bi-directional Transfer Graph Collaborative Filtering Networks. In Proceedings of the 29th ACM International Conference on Information & Knowledge Management. ACM, Virtual Event Ireland, 885-894. https: //doi.org/10.1145/3340531.3412012
+
+[20] Weiming Liu, Xiaolin Zheng, Mengling Hu, and Chaochao Chen. 2022. Collaborative Filtering with Attribution Alignment for Review-based Non-overlapped Cross Domain Recommendation. Proceedings of the ACM Web Conference 2022 (2022).
+
+[21] Weiming Liu, Xiaolin Zheng, Mengling Hu, and Chaochao Chen. 2022. Exploiting Variational Domain-Invariant User Embedding for Partially Overlapped Cross Domain Recommendation. Proceedings of the 45th International ACM SIGIR Conference on Research and Development in Information Retrieval (2022). https: //doi.org/10.1145/3477495.3531975
+
+[22] Tong Man, Huawei Shen, Xiaolong Jin, and Xueqi Cheng. 2017. Cross-Domain Recommendation: An Embedding and Mapping Approach. In Proceedings of the Twenty-Sixth International Joint Conference on Artificial Intelligence. International Joint Conferences on Artificial Intelligence Organization, Melbourne, Australia, 2464-2470. https://doi.org/10.24963/ijcai.2017/343
+
+[23] Kelong Mao, Jieming Zhu, Jinpeng Wang, Quanyu Dai, Zhenhua Dong, Xi Xiao, and Xiuqiang He. 2021. SimpleX: A Simple and Strong Baseline for Collaborative Filtering. In Proceedings of the 30th ACM International Conference on Information & Knowledge Management (CIKM '21). Association for Computing Machinery, New York, NY, USA, 1243-1252. https://doi.org/10.1145/3459637.3482297
+
+[24] Steffen Rendle, Christoph Freudenthaler, Zeno Gantner, and Lars Schmidt-Thieme. 2009. BPR: Bayesian Personalized Ranking from Implicit Feedback. ArXiv abs/1205.2618 (2009).
+
+[25] Kai Shu, Suhang Wang, Jiliang Tang, Yilin Wang, and Huan Liu. 2018. CrossFire: Cross Media Joint Friend and Item Recommendations. Proceedings of the Eleventh ACM International Conference on Web Search and Data Mining (2018).
+
+[26] Ajit P. Singh and Geoffrey J. Gordon. 2008. Relational learning via collective matrix factorization. In Proceedings of the 14th ACM SIGKDD international conference on Knowledge discovery and data mining. ACM, Las Vegas Nevada USA, 650-658. https://doi.org/10.1145/1401890.1401969
+
+[27] Tianzi Zang, Yanmin Zhu, Haobing Liu, Ruohan Zhang, and Jiadi Yu. 2022. A Survey on Cross-domain Recommendation: Taxonomies, Methods, and Future Directions. ACM Transactions on Information Systems (July 2022), 3548455. https: //doi.org/10.1145/3548455
+
+[28] Wen Zhang, Lingfei Deng, Lei Zhang, and Dongrui Wu. 2020. A Survey on Negative Transfer. IEEE/CAA Journal of Automatica Sinica 10 (2020), 305-329. https://api.semanticscholar.org/CorpusID:235790783
+
+[29] Wayne Xin Zhao, Shanlei Mu, Yupeng Hou, Zihan Lin, Kaiyuan Li, Yushuo Chen, Yujie Lu, Hui Wang, Changxin Tian, Xingyu Pan, Yingqian Min, Zhichao Feng, Xinyan Fan, Xu Chen, Pengfei Wang, Wendi Ji, Yaliang Li, Xiaoling Wang, and Ji-Rong Wen. 2021. Recbole: Towards a unified, comprehensive and efficient framework for recommendation algorithms. In CIKM.
+
+[30] Feng Zhu, Chaochao Chen, Yan Wang, Guanfeng Liu, and Xiaolin Zheng. 2019. DTCDR: A Framework for Dual-Target Cross-Domain Recommendation. Proceedings of the 28th ACM International Conference on Information and Knowledge Management (2019).
+
+[31] Feng Zhu, Yan Wang, Chaochao Chen, Guanfeng Liu, and Xiaolin Zheng. 2020. A Graphical and Attentional Framework for Dual-Target Cross-Domain Recommendation. In International Joint Conference on Artificial Intelligence.
+
+[32] Feng Zhu, Yan Wang, Chaochao Chen, Jun Zhou, Longfei Li, and Guanfeng Liu. 2021. Cross-Domain Recommendation: Challenges, Progress, and Prospects. In Proceedings of the Thirtieth International Joint Conference on Artificial Intelligence. International Joint Conferences on Artificial Intelligence Organization, Montreal, Canada, 4721-4728. https://doi.org/10.24963/ijcai.2021/639
+
+[33] Feng Zhu, Yan Wang, Jun Zhou, Chaochao Chen, Longfei Li, and Guanfeng Liu. 2021. A Unified Framework for Cross-Domain and Cross-System Recommendations. IEEE Transactions on Knowledge and Data Engineering 35 (2021), 1171-1184.
+
+[34] Jieming Zhu, Quanyu Dai, Liangcai Su, Rong Ma, Jinyang Liu, Guohao Cai, Xi Xiao, and Rui Zhang. 2022. BARS: Towards Open Benchmarking for Recommender Systems. In SIGIR '22: The 45th International ACM SIGIR Conference on Research and Development in Information Retrieval, Madrid, Spain, July 11 - 15, 2022, Enrique Amigó, Pablo Castells, Julio Gonzalo, Ben Carterette, J. Shane Culpepper, and Gabriella Kazai (Eds.). ACM, 2912-2923. https://doi.org/10.1145/ 3477495.3531723
+
+[35] Yongchun Zhu, Zhenwei Tang, Yudan Liu, Fuzhen Zhuang, Ruobing Xie, Xu Zhang, Leyu Lin, and Qing He. 2021. Personalized Transfer of User Preferences for Cross-domain Recommendation. Proceedings of the Fifteenth ACM International Conference on Web Search and Data Mining (2021).

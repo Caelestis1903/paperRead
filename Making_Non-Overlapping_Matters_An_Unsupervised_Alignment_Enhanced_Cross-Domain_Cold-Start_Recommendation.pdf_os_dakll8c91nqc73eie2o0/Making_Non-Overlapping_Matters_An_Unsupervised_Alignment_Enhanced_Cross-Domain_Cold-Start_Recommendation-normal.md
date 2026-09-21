@@ -1,0 +1,567 @@
+# Making Non-Overlapping Matters: An Unsupervised Alignment Enhanced Cross-Domain Cold-Start Recommendation
+
+Zihan Wang , Yonghui Yang (c), Le Wu \( {}^{\circledR } \) , Member, IEEE, Richang Hong \( {}^{\circledR } \) , Senior Member, IEEE, and Meng Wang
+
+Abstract-Cold-start recommendation is a long-standing challenge when presenting potential preferred items to new users. Most empirical studies leverage side information to promote cold-start recommendation. In this work, we focus on cross-domain cold-start recommendation, which aims to provide suggestions to those nonoverlapping users who have only interacted in the source domain and are viewed as new users in the target domain. Pre-training and then mapping is the common solution for the cross-domain cold-start recommendation. The former learns domain-specific user preference, and the latter transfers preference knowledge from the source to the target domain. Despite the effectiveness, we argue that current mapping-based methods still have the following limitations. First, current mapping functions fail to fully consider the similarity of user behavioral patterns, either common transfer or personalized transfer mappings. Second, sparse supervision signals from the limited overlapping users, lead to insufficient mapping function learning for recommendation. To tackle the above limitations, we propose a novel MACDR model for cross-domain cold-start recommendation. Specifically, MACDR consists of two elaborate modules: a Prototype enhanced Mixture-Of-Experts (PMOE) based mapping function and a Preference Distribution Alignment (PDA) enhanced optimization. PMOE is designed to balance the transfer patterns of common and personalized preferences, following the basis that similar users share similar preference transfer. Furthermore, to alleviate the sparse supervision issue, PDA is designed to explore the utilization of non-overlapping users in an unsupervised manner based on the prototype distribution alignment technique. Extensive experiments on three real-world datasets demonstrate the effectiveness of the proposed method.
+
+Index Terms-Cross-domain recommendation, cold-start recommendation, transfer learning, mixture-of-experts, unsupervised learning, preference distribution alignment.
+
+## I. INTRODUCTION
+
+PERSONALIZED recommendations [1], [4], [5], [8], [17], [38] have become an important information filtering tool in various online applications for guiding users to discover products that appeal to them. However, they suffer from the longstanding cold-start problem, which hard to provide satisfying recommendations for cold-start users (i.e., new users without any historical interactions). Nowadays, web platforms are operating various service domains simultaneously (e.g., music streaming, game store, and eBook subscription). Users have more opportunities to interact with multiple platforms in their daily lives. Therefore, Cross-domain Recommendation (CDR) [46], [49] which aims to transfer knowledge from an informative source domain to the target domain becomes a promising solution to alleviate the cold-start problem.
+
+![0_884_597_744_409_0.jpg](images/0_884_597_744_409_0.jpg)
+
+Fig. 1. Illustration of cross-domain cold-start users recommendation (i.e., cross-domain recommendation to cold-start users or cold-start users problem in CDR). There are a few overlapping users across the source domain (i.e., Movie domain) and the target domain (i.e., Book domain), the goal of our task is to recommend items in the target domain to those non-overlapping users in the source domain.
+
+Existing researchers mainly describe the task in three terms: cross-domain cold-start users recommendation, cross-domain recommendation for cold-start users, or cold-start users problem in CDR. To avoid misunderstandings or word misuse, we consistently use the phrase cross-domain cold-start recommendation to describe the task in the following sections. We also give a toy example as shown in Fig. 1 to illustrate cross-domain cold-start users recommendation [7], [18], [25], [41]. There are interactions from source domain (i.e., Movie domain) and target domain (i.e., Book domain). These two domains have a few overlapping users, and the others are non-overlapping users. Our goal is to recommend items in target domain to non-overlapping users who have rich interactions in the source domain (which can be viewed as target domain cold-start users), as highlighted in the red dashed line. Most existing cross-domain cold-start methods follow the schema that preference pre-training and then mapping [18], [41], [50], [51]. Among them, pre-training aims to learn users' domain-specific preferences, and mapping transfer preference knowledge from the informative source to the target domain. After training the CDR model with the overlapping users, the mapping function can be used to transfer preference for those non-overlapping users, completing the recommendation process. Despite the effectiveness, we argue that current mapping-based CDR methods still have two limitations shown in Fig. 2.
+
+---
+
+Received 10 April 2024; revised 30 October 2024; accepted 25 November 2024. Date of publication 5 December 2024; date of current version 7 March 2025. This work was supported in part by the National Key Research and Development Program of China under Grant 2021ZD0111802, and in part by the National Natural Science Foundation of China under Grant U23B2031 and Grant 72188101. Recommended for acceptance by T. Weninger. (Corresponding authors: Yonghui Yang; Le Wu.)
+
+The authors are with the Key Laboratory of Knowledge Engineering with Big Data, Hefei University of Technology, Hefei 230002, China (e-mail: zhwang. hfut@gmail.com; yyh.hfut@gmail.com; lewu.ustc@gmail.com; hongrc. hfut@gmail.com; eric.mengwang@gmail.com).
+
+We have released the code to support the community at https://github.com/ wzh-study/MACDR.
+
+Digital Object Identifier 10.1109/TKDE.2024.3511602
+
+---
+
+![1_121_184_736_377_0.jpg](images/1_121_184_736_377_0.jpg)
+
+Fig. 2. Limitations of current cross-domain cold-start works and the contributions of our paper. We propose PMOE mapping module (i.e., Contribution 1) for solving Limit 1 and design unsupervised PDA optimization strategy (i.e., Contribution 2) for mitigating Limit 2.
+
+Limit 1: Mapping function only captures the transfer patterns of common or personalized preference. Current mapping functions are sub-optimal either one-to-all (common transfer) [18], [22], [25] or one-to-one forms (personalized transfer) [41], [50], [51], which are difficult to adequately express interest preference transfer between domains. Considering the characteristics of recommendation, users with similar behavior patterns(interest) should share more common preference transfer [9], [24], [41]. Therefore, designing a mapping function by flexibly considering the transfer patterns of both common and personalized preferences is an emerging need.
+
+Limit 2: Insufficient model training with limited overlapping users. Most of the current methods only use overlapping users to optimize the mapping function, which heavily relies on the number of overlapping users. Sparse supervision signals from the limited overlapping users lead to insufficient mapping function learning for recommendation. Some attempts [18], [34] incorporate all non-overlapping source user or interaction item embeddings into the training of the mapping function. However, these methods introduce some useless information, which is unstable to enhance recommendation performances [51]. Therefore, how to better utilize non-overlapping users to enhance model learning remains challenging.
+
+To tackle the above limitations, we propose a novel MACDR model for the cross-domain cold-start users recommendation. Specifically, MACDR consists of two elaborate modules: a Prototype enhanced Mixture-Of-Experts (PMOE) based mapping function and a Preference Distribution Alignment (PDA) enhanced optimization. PMOE function is designed to balance the transfer patterns of common and personalized preferences, following the basis that similar users share similar preference transfer. We first assign users to several prototypes by clustering. Then we utilize expert networks to process the diverse inputs from different individual users to capture the transfer pattern of personalized preference. Meanwhile, we feed the prototype embeddings as input to learn the gate logit. Thus, users with the same prototype will have the same logits, which capture the transfer pattern of common preference. Both determine the final mapping functions. To alleviate the sparse supervision issue, we combine the non-overlapping users for model learning in an unsupervised manner. Specifically, we build a preference distribution alignment based on equivariant learning. We assume that users with the same prototype have a closer representation distance after mapping, while the counterparts have a larger representation distance. Based on the above idea, we implement PDA based on generator and discriminator learning. The mapping function is just like a generator to obtain approximate target domain preference. After that, we use a discriminator to distinguish positive and negative examples, which are composed of two mapped user representations. If two users come from the same prototype, their mapped representations construct a positive sample, and vice versa. The major contributions of this work are summarized as follows:
+
+- We propose a novel MACDR model for the cross-domain cold-start recommendation, which consists of the elaborate mapping function and preference distribution alignment.
+
+- We design a Prototype enhanced Mixture-Of-Experts (PMOE) mapping function, which can flexibly combine the transfer patterns of common and personalized preferences.
+
+- We devise an unsupervised Preference Distribution Alignment (PDA) optimization strategy to better exploit the non-overlapping users, which can effectively alleviate the sparse supervision issue from the limited overlapping users.
+
+- Extensive experiments conducted on three real-world datasets demonstrate the effectiveness of our proposed MACDR, including high performances and generality of the designed PDA optimization strategy.
+
+## II. RELATED WORK
+
+## A. Cold-Start Recommendation
+
+Recommender systems [14], [23], [32], [37], [42], [43] face the persistent challenge of providing accurate recommendations for new users or items on web platforms, which is known as cold-start recommendations [2], [3], [27], [39], [40]. One common approach is to use additional contextual information to reduce dependence on interaction data. Specifically, content-based recommenders usually transform user attributes into preference representations for improving the cold-start recommendation performance. DropoutNet [31] and MTPR [11] adopt a dropout strategy that randomly inputs either preference or attribute representations in the training stage to imitate cold-start situations. Some methods attempt to use pre-trained representations to better capture the correlation and reduce the difference between CF signals and content features [36], [52]. For example, Heater [52] extracts content representations and uses the sum squared error loss to align pre-trained CF representations and content representations. In addition to content attributes, knowledge graphs [12], social networks [33], and auxiliary domains [25], [48], [51] are also considered effective external preference knowledge to mitigate the cold start problem. Considering that in real-life scenarios, users visit various platforms in their daily lives, and different platforms are usually interconnected, it is relatively easy to obtain users' interaction records on other platforms. Therefore, in this paper, we focus on utilizing other domain interaction records to help target domain cold-start users for recommendations.
+
+TABLE I
+
+MATHEMATICAL NOTATIONS
+
+<table><tr><td>Notation</td><td>Description</td></tr><tr><td>\( {n}_{s},{n}_{t} \)</td><td>The number of users in the source and target domains.</td></tr><tr><td>\( {m}_{s},{m}_{t} \)</td><td>The number of items in the source and target domains.</td></tr><tr><td>\( {n}_{o} \)</td><td>The number of overlapping users.</td></tr><tr><td>\( K \)</td><td>The number of prototype centers.</td></tr><tr><td>\( {\mathcal{U}}^{s},{\mathcal{U}}^{t} \)</td><td>Userset in the source and target domains.</td></tr><tr><td>\( {\mathcal{V}}^{s},{\mathcal{V}}^{t} \)</td><td>Itemset in the source and target domains.</td></tr><tr><td>\( {\mathcal{R}}^{s},{\mathcal{R}}^{t} \)</td><td>Rating matrices in the source and target domains.</td></tr><tr><td>\( {\mathcal{U}}^{o} \)</td><td>Overlapping users across two domains.</td></tr><tr><td>\( {\mathbf{U}}^{s},{\mathbf{V}}^{s} \)</td><td>Pre-trained source user and item representations.</td></tr><tr><td>\( {\mathbf{U}}^{t},{\mathbf{V}}^{t} \)</td><td>Pre-trained target user and item representations.</td></tr><tr><td>C</td><td>Source user prototype representations.</td></tr><tr><td>P</td><td>Source interacted item sequence representations.</td></tr><tr><td>\( {\mathcal{L}}_{r} \)</td><td>Cross-domain supervised rating prediction loss.</td></tr><tr><td>\( {\mathcal{L}}_{dis} \)</td><td>Cross-domain unsupervised discriminator loss.</td></tr></table>
+
+## B. Cross-Domain Cold-Start Recommendation
+
+Cross-domain recommendation [6], [7], [18], [25] is an emerging direction to solve cold-start recommendation. Existing methods can be broadly divided into three categories: matrix factorization methods, content-based methods, and mapping-based methods. In the initial phase, CMF [28] and CDCF [21] use shared user matrices across all domains and apply matrix factorization algorithms [20] to learn multiple rating matrices simultaneously, thus advancing cross-domain recommendation techniques. CBMF [26] first devises a cluster-level cross-domain matrix to learn the correlation between user clusters and item clusters. Subsequently, content-based methods are proposed. CATN [47] proposes an end-to-end framework to capture the aspect-level correlation between user reviews and item descriptions across domains. However, all domain interaction data and feature information are required for matrix factorization and content-based methods during training. Some researchers argue that privacy protection exists for each domain's information in real-life scenarios, making it difficult to obtain interaction information from two domains simultaneously. Therefore, pretraining and then mapping (mapping-based) CDRs are proposed to transfer pre-trained embeddings across domains by various methods. This paradigm is based on the assumption that there is a correlation between a user's interest preferences in the source domain and their interest preferences in the target domain. The steps of the pipeline's abbreviated description are: (1) first pretraining user embedding of source/target domain, (2) learning a mapping function with the overlapped users, and (3) predicting items in target domain for source users. EMCDR [25] is first proposed as a pre-training and then mapping paradigm. it learns a mapping function to infer latent factors for new items/users in the target domain. Subsequently, many models followed the framework for further improvements. DCDCSR [48] considers the sparsity degree to construct benchmark factors with top-K similar entities first and trains a model to map latent factors into these factors. SSCDR [18] is a semi-supervised method, which utilizes records information of users and item interactions in the source domain to improve the robustness of the mapping function. LACDR [34] employs the framework of autoencoder to improve the previous problem of over-simplification of the mapping function and utilizes the reconstruction loss and alignment loss to leverage all non-overlapping users into the learning of the mapping function. Inspired by successful applications of meta-learning, the recently proposed TMCDR [50], PTUPCDR [51] and HCCDR [41] follow the MAML [13] framework to learn a meta-network that customizes the mapping function to achieve better performances instead of the traditional linear mapping. Although existing pre-training and then mapping models are effective, most of them use simple linear mapping functions and fail to fully leverage non-overlapping users' preferences, ultimately leading to suboptimal performance. Our proposed model extends the original mapping function and makes better use of non-overlapping users to generate more effective training signals for mapping function learning.
+
+## III. PRELIMINARIES
+
+## A. Problem Statement
+
+In CDR, we have a source domain and a target domain. Each domain has a userset \( \mathcal{U} = \left\{  {{u}_{1},{u}_{2},\ldots }\right\} \) , an itemset \( \mathcal{V} = \; \left\{  {{v}_{1},{v}_{2},\ldots }\right\} \) , and a rating matrix \( \mathbf{R} \) . The source domain has \( {n}_{s} \) users, \( {m}_{s} \) items and the target domain has \( {n}_{t} \) users, \( {m}_{t} \) items. \( {r}_{ij} \in  \mathbf{R} \) denotes the rating between user \( i \) and item \( j \) . To distinguish two domains, we use \( {\mathcal{U}}^{s},{\mathcal{V}}^{s},{\mathcal{R}}^{s} \) to denote the userset, itemset, and rating matrix of the source domain, while \( {\mathcal{U}}^{t},{\mathcal{V}}^{t},{\mathcal{R}}^{t} \) denotes for the userset, itemset, and rating matrix the target domain. We define the overlapping users between the two domains as \( {\mathcal{U}}^{o} = {\mathcal{U}}^{s} \cap  {\mathcal{U}}^{t} \) . In contrast, \( {\mathcal{V}}^{s} \) and \( {\mathcal{V}}^{t} \) are disjoint, which means there are no shared items between the two domains.
+
+Given the above data, our goal is to predict the unknown non-overlapping users' preferences for the items in target domain: \( {\widehat{r}}_{ij} = f\left( {{u}_{i}^{s},{v}_{j}^{t}}\right) \) , where \( {u}_{i}^{s} \in  {\mathcal{U}}^{s}\&  \notin  {\mathcal{U}}^{o} \) denote each nonoverlapping user and \( {v}_{j}^{t} \) denote each target domain item.
+
+![3_134_182_1494_457_0.jpg](images/3_134_182_1494_457_0.jpg)
+
+Fig. 3. Illustration of three mapping functions. (a) One-to-all [18], [22], [25]: all users share the same mapping function; (b) One-to-one [41], [51]: each user has a personalized mapping function; (c) MACDR (Ours): we propose a Prototype enhanced Mixture-Of-Experts (PMOE) based mapping function to capture the transfer patterns of common and personalized preferences and design an unsupervised preference distribution alignment (PDA) optimization to better exploit the non-overlapping users, following the assumption that users with the same prototype have closer representation after mapping.
+
+## B. Schema of the Pre-Training & Mapping
+
+Considering the scenario of data isolation in practical applications, that is, the interactive information between users and items in a specific domain is not observable by other domains, pre-training and then mapping is the common solution in cross-domain cold-start recommendation [18], [22], [25], [41], [51]. Among them, pre-training aims to learn the domain-specific preference representations, while mapping aims to transfer preference knowledge from the source to the target domain. As this is the basic paradigm, we first present the overall architecture.
+
+1) Domain-Specific Preference Pre-Training: Given interaction data in both domains, we first learn domain-specific preferences with SOTA methods, i.e., Matrix Factorization [20] and LightGCN [16]. Without generality, we use Pre() to denote the used pre-training model, and then we obtain the pre-trained source (target) domain preference representations:
+
+\[
+{\mathbf{U}}^{s},{\mathbf{V}}^{s} = \operatorname{Pre}\left( {{R}^{s},{\theta }_{1}}\right)
+\]
+
+\[
+{\mathbf{U}}^{t},{\mathbf{V}}^{t} = \operatorname{Pre}\left( {{R}^{t},{\theta }_{2}}\right) , \tag{1}
+\]
+
+where \( {\mathbf{U}}^{s} \in  {\mathbb{R}}^{{n}_{s} \times  d},{\mathbf{V}}^{s} \in  {\mathbb{R}}^{{m}_{s} \times  d} \) are pre-trained user and item embedding matrices in the source domain, \( {\mathbf{U}}^{t} \in  {\mathbb{R}}^{{n}_{t} \times  d},{\mathbf{V}}^{t} \in \; {\mathbb{R}}^{{m}_{t} \times  d} \) are pre-trained user and item embedding matrices in the target domain. \( {\theta }_{1} \) and \( {\theta }_{2} \) denote the parameters of the used pretraining model in source and target domains, respectively.
+
+2) Domain Preference Mapping: Given the pre-trained user preferences, the mapping function aims to transfer preference knowledge from the information-rich source domain to the target domain. There are two popular mapping functions in CDR: one-to-all mapping [18], [25] and one-to-one mapping [50], [51], which are illustrated in Fig. 3(a), (b). The first is one-to-all mapping, which assumes that all overlapping users share the same preference transfer:
+
+\[
+{\widehat{\mathbf{U}}}^{t} = \operatorname{Map}\left( {\mathbf{U}}^{s}\right) , \tag{2}
+\]
+
+where \( {Map}\left( \right) \) denotes the generic mapping function, which is usually implemented by Multi-Layer Perceptrons (MLPs). Besides, some works argue that one-to-all mapping is not effective, and the mapping function should be personalized to each user [51]. Thus, the second kind of mapping function is one-to-one, which is defined as follows:
+
+\[
+{\widehat{\mathbf{u}}}_{1}^{t} = {ML}{P}_{1}\left( {\mathbf{u}}_{1}^{s}\right)
+\]
+
+\[
+{\widehat{\mathbf{u}}}_{2}^{t} = {ML}{P}_{2}\left( {\mathbf{u}}_{2}^{s}\right)
+\]
+
+\[
+{\widehat{\mathbf{u}}}_{{n}_{o}}^{t} = {ML}{P}_{{n}_{o}}\left( {\mathbf{u}}_{{n}_{o}}^{s}\right) , \tag{3}
+\]
+
+where \( {n}_{o} \) denotes the number of overlapping users, each user has personalized mapping MLPs. Because learning \( {n}_{o} \) MLPs is too expensive, a Meta-Network method has been proposed to learn personalized mapping functions [51].
+
+3) Model Optimization: After obtaining the transferred user embeddings, There are two main methods for optimization. One is to minimize the distance between the transferred user embeddings and the pre-trained target user embeddings [18], [25]. This distance-oriented optimization is defined as follows:
+
+\[
+{\mathcal{L}}_{r} = \mathop{\sum }\limits_{{{u}_{i} \in  {\mathcal{U}}^{o}}}{\begin{Vmatrix}{\widehat{\mathbf{u}}}_{i}^{t} - {\mathbf{u}}_{i}^{t}\end{Vmatrix}}^{2} \tag{4}
+\]
+
+where \( {\widehat{\mathbf{u}}}_{i}^{t} \) denotes the transformed user embedding in the source domain. and \( {\mathbf{u}}_{i}^{t} \in  {\mathbf{U}}^{t} \) denotes the pre-train user embedding in the target domain. Another popular optimization is task-oriented, which constrains the transferred user embeddings to reconstruct the true preferences in the target domain [51]. This task-oriented optimization is defined as follows:
+
+\[
+{\mathcal{L}}_{r} = \frac{1}{\left| {\mathcal{R}}_{o}^{t}\right| }\mathop{\sum }\limits_{{{r}_{ij} \in  {\mathcal{R}}_{o}^{t}}}{\left( {r}_{ij} - {\widehat{\mathbf{u}}}_{i}^{t}{\mathbf{v}}_{j}^{t}\right) }^{2}, \tag{5}
+\]
+
+where \( {\mathcal{R}}_{o}^{t} = \left\{  {{r}_{ij} \mid  {u}_{i} \in  {\mathcal{U}}^{o},{v}_{j}^{t} \in  {\mathcal{V}}^{t}}\right\} \) denotes the interactions of overlapping users in the target domain.
+
+After minimizing the loss function ((4) or (5)), we have the optimized mapping function, which can be applied to nonoverlapping users. Given the above, we obtain the approximated user representation in the target domain, to serve the recommendation process.
+
+![4_109_181_1522_509_0.jpg](images/4_109_181_1522_509_0.jpg)
+
+Fig. 4. An Illustration of our proposed MACDR framework, which consists of Prototype enhanced Mixture-Of-Experts (PMOE) mapping module and Preference Distribution Alignment (PDA) optimization strategy. The PMOE module provides a flexible mapping function that combines the patterns of common and personalized preference transfer based on user prototypes. The PDA optimization strategy utilizes non-overlapping users to boost recommendation performance in an unsupervised manner.
+
+## IV. METHODOLOGY
+
+## A. Architecture Overview of MACDR
+
+As illustrated in Fig. 4, MACDR consists of two elaborate modules: a Prototype enhanced Mixture-Of-Experts (PMOE) mapping module and an unsupervised Preference Distribution Alignment (PDA) optimization. Among them, PMOE considers the transfer patterns of both common and personalized preferences for the mapping function, and PDA further exploits nonoverlapping users to enhance model learning. In the following, we introduce each module in detail. Last, we give the overall learning process of MACDR.
+
+## B. Prototype Enhanced Mixture-of-Experts Mapping
+
+Here, we introduce our proposed PMOE mapping function. Given the pre-trained domain-specific preference, PMOE can flexibly combine the transfer patterns of common and personalized preferences for CDR tasks.
+
+We use prototype learning to formulate user similarity. Without loss of generality, we use \( {\mathbf{U}}^{o},{\mathbf{U}}^{s},{\mathbf{U}}^{t} \) to denote embedding matrices of overlapping users, users in source domain, and users in target domain, respectively. Suppose there are \( K \) prototypes \( \mathbf{C} \in  {\mathbb{R}}^{K \times  d} \) of the pre-trained source user embeddings \( {\mathbf{U}}^{s} \) , we assign these users to \( K \) prototypes by maximize the conditional probability:
+
+\[
+{\mathbf{c}}_{i} = \arg \mathop{\max }\limits_{k}p\left( {{\mathbf{c}}^{k} \mid  {u}_{i}^{s}}\right) , \tag{6}
+\]
+
+where \( {\mathbf{c}}^{k} \) denotes the \( {k}^{th} \) prototype, \( {u}_{i}^{s} \) denotes the \( {i}^{th} \) source domain user, and \( p\left( {{\mathbf{c}}^{k} \mid  {u}_{i}^{s}}\right) \) denotes the probability that user \( {u}_{i}^{s} \) belong to prototype \( {\mathbf{c}}^{k} \) . We employ K-Means clustering to implement the above process.
+
+After obtaining the prototype information, we model the user's unique characteristics, including interacted item sequence and pre-trained personalized preference. Following [51], different interacted items contribute differently to user preference transfer. We utilize the attention mechanism to formulate the user's interaction sequence. Formally, we denote the list of user \( i \) sequential interaction items in source domain by \( {\mathcal{S}}_{i} = \; \left\{  {{v}_{1}^{s},{v}_{2}^{s},\ldots ,{v}_{l}^{s}}\right\} \) , where \( l \) denotes the number of interacted items and each \( {v}_{j}^{s} \in  {\mathcal{S}}_{i} \) denotes the interacted item in the source domain. The attention network is defined as:
+
+\[
+\left\{  \begin{matrix} {\bar{a}}_{j}^{s} = \operatorname{att}\left( {{\mathbf{v}}_{j}^{s};{\theta }_{a}}\right) \\  {a}_{j}^{s} = \frac{\exp \left( {\bar{a}}_{j}^{s}\right) }{\mathop{\sum }\limits_{{{v}_{k}^{s} \in  {\mathcal{S}}_{i}}}\exp \left( {\bar{a}}_{k}^{s}\right) }, \end{matrix}\right. \tag{7}
+\]
+
+where \( \operatorname{att}\left( \cdot \right) \) denotes the attention network which consists of a two-layer feed-forward network, and \( {\theta }_{a} \) denotes the parameters of the attention network. \( {a}_{j}^{s} \) is the normalized attention score for item \( {v}_{j}^{s} \) , which can be interpreted as the importance of \( {v}_{j}^{s} \) in predicting the personalized mapping function. Then the user's interaction sequence is weighted and summed to obtain the user characteristic representation.
+
+\[
+{\mathbf{p}}_{i} = \mathop{\sum }\limits_{{{v}_{j}^{s} \in  {\mathcal{S}}_{i}}}{a}_{j}^{s}{\mathbf{v}}_{j}^{s}, \tag{8}
+\]
+
+where \( {\mathbf{p}}_{i} \in  {\mathbb{R}}^{d} \) denotes the transferable characteristic embedding of user \( i \) .
+
+Given the pre-trained user representation, user prototype representation, and characteristic representation of the interaction sequence, we fuse them as inputs to learn each expert output. This process is formulated as follows:
+
+\[
+{\mathbf{z}}_{i} = {\mathbf{u}}_{i}^{s} \oplus  {\mathbf{c}}_{i} \oplus  {\mathbf{p}}_{i}, \tag{9}
+\]
+
+where \( {\mathbf{z}}_{i} \in  {R}^{d} \) denotes the input to the expert network for user \( i \) . Then the specific form of the mixture-of-expert mapping function is defined as follows:
+
+\[
+\left\{  \begin{matrix} {f}_{\text{ gate }}\left( \mathbf{Z}\right)  = \operatorname{Softmax}\left( {{\mathbf{W}}_{g}\mathbf{Z} + {\mathbf{b}}_{g}}\right) \\  {h}_{\text{ expert }}\left( \mathbf{C}\right)  = \sigma \left( {{\mathbf{W}}_{h}\mathbf{C} + {\mathbf{b}}_{h}}\right) \\  {\widehat{u}}_{i}^{t} = \mathop{\sum }\limits_{{x = 1}}^{X}{f}_{x}\left( {\mathbf{c}}_{i}\right)  \cdot  {h}^{x}\left( {\mathbf{z}}_{i}\right) , \end{matrix}\right. \tag{10}
+\]
+
+where \( {f}_{\text{ gate }}\left( \mathbf{C}\right) \) and \( {f}_{\text{ expert }}\left( \mathbf{Z}\right) \) represent formulas for gate and expert networks, which are both composed of multiple linear layers and activation functions. The source user prototype representation matrix \( \mathbf{C} \) is the input to the gate network. \( {\mathbf{W}}_{g} \) and \( {\mathbf{b}}_{g} \) are feature transformation matrix and bias matrix, and \( {\mathbf{W}}_{h} \) and \( {\mathbf{b}}_{h} \) are similar definitions in experts networks. \( \sigma \) is the activation function, and \( X \) is a hyper-parameter denoting the number of experts. \( {\widehat{u}}_{i}^{t} \) is the mapped target domain representation we obtained, which reflects the approximated user target domain preferences.
+
+The design benefits of PMOE inputs are as follows: First, our designed PMOE mapping function escapes from the previous simple linear function form. Most importantly, we feed the prototype embeddings as input to learn the gate logit. Thus, users with the same prototype will get the same gate logit, which can capture the transfer pattern of common preference based on prototype guidance. while MOE networks are suitable for processing different types of inputs with different experts. We input different types of information from the source domain into the expert network to capture a personalized preference relationship from the source domain to the target domain. Based on the above, our designed PMOE module can not be fully common or personalized, but flexibly combine the preferences of both information to obtain better cold-start mapped representations in CDR.
+
+## C. Preference Distribution Alignment
+
+After obtaining the approximated user preference in the target domain, most of the current methods optimize the model by aligning the users' real feedback in the target domain. Despite the effectiveness, their performances heavily rely on the limited overlapping users. Here, we introduce our proposed PDA, an unsupervised preference distribution alignment optimization, which can utilize non-overlapping users in a more rational way to facilitate mapping functions in learning. Specifically, PDA is based on equivariant learning, that users with the same prototype are also more similar in the mapped representation space. We implement PDA with generator and discriminator learning. First, We sample a user \( {u}_{b}^{s} \) of the same prototype as \( {u}_{a}^{s} \) and \( {N}_{s} \) non-overlapping users of different prototypes (i.e., \( {u}_{c}^{s} \) ) in the source domain. In the following description, the value of \( {N}_{s} \) is set to 1. Then we view the PMOE as a generator that produces approximated user representation \( {\widehat{\mathbf{U}}}^{t} \) in the target domain, and use a discriminator to distinguish positive or negative user pairs based on their prototypes. In the following, we detail present how to optimize the discriminator in an unsupervised manner.
+
+Generator: For each user tuple \( < {u}_{a}^{s},{u}_{b}^{s},{u}_{c}^{s} > \) , we obtain their approximated preference embedding by PMOE:
+
+\[
+\left\{  \begin{matrix} \mathbf{z} = {\mathbf{u}}^{s} \oplus  \mathbf{p} \oplus  \mathbf{c}, \\  {\widehat{\mathbf{u}}}_{a}^{t} = \operatorname{PMOE}\left( {{\mathbf{z}}_{a},{\mathbf{c}}_{a}}\right) \\  {\widehat{\mathbf{u}}}_{b}^{t} = \operatorname{PMOE}\left( {{\mathbf{z}}_{b},{\mathbf{c}}_{b}}\right) ,\;{c}_{b} = {c}_{a} \\  {\widehat{\mathbf{u}}}_{c}^{t} = \operatorname{PMOE}\left( {{\mathbf{z}}_{c},{\mathbf{c}}_{c}}\right) ,\;{c}_{c} \neq  {c}_{a}, \end{matrix}\right. \tag{11}
+\]
+
+where \( {\mathbf{u}}^{s},\mathbf{p},\mathbf{c} \) denote the pre-trained, interacted item sequence and prototype representation. Through (11), we can use PMOE module to get the overlapping users \( {u}_{a}^{s} \) , source domain users of the same prototype \( {u}_{b}^{s} \) , and different prototype users \( {u}_{c}^{s} \) mapped to the target domain embedding \( {\widehat{\mathbf{u}}}_{a}^{t},{\widehat{\mathbf{u}}}_{b}^{t} \) and \( {\widehat{\mathbf{u}}}_{c}^{t} \) , respectively.
+
+Discriminator: Given the approximated user representation in the target domain, we concatenate each user pair's approximated representation as the input to the discriminator \( \mathcal{D} \) . For two users with the same prototype, the discriminator outputs a "real" value, otherwise, it outputs a "fake" value. The optimization is defined as follows:
+
+\[
+{L}_{dis} = \mathop{\min }\limits_{{\theta }_{d}}{\mathbb{E}}_{{u}_{a}^{s} \sim  {U}^{o},{u}_{c}^{s} \notin  {c}_{a}}\left\lbrack  {\log \left( {\mathcal{D}\left( {{\widehat{u}}_{a}^{t}\parallel {\widehat{u}}_{c}^{t}}\right) }\right) }\right\rbrack
+\]
+
+\[
+- {\mathbb{E}}_{{u}_{a}^{s} \sim  {U}^{o},{u}_{b}^{s} \in  {c}_{a}}\left\lbrack  {\log \left( {\mathcal{D}\left( {{\widehat{u}}_{a}^{t}\parallel {\widehat{u}}_{b}^{t}}\right) }\right) }\right\rbrack  . \tag{12}
+\]
+
+In practice, we use 3-layer MLPs to implement the discriminator \( \mathcal{D} \) , where \( {\theta }_{d} \) is the parameters of the discriminator \( \mathcal{D} \) . Based on the discriminator, we involve non-overlapping users in model training, which can effectively mitigate the sparse supervision issue. Finally, we present the overall learning process of MACDR.
+
+## D. Overall Learning of MACDR
+
+1) Domain-Specific Preference Pre-Training: We follow previous work [18], [25] in adopting the widely used Matrix Factorization(MF) [20] as the pre-training model to obtain the user and item embedding matrices in each domain. Specifically, we use \( {\mathbf{U}}^{s} \in  {\mathbb{R}}^{{n}_{s} \times  d},{\mathbf{V}}^{s} \in  {\mathbb{R}}^{{m}_{s} \times  d} \) to denote pre-trained user and item embedding matrices in the source domain, and \( {\mathbf{U}}^{t} \in  {\mathbb{R}}^{{n}_{t} \times  d},{\mathbf{V}}^{t} \in  {\mathbb{R}}^{{m}_{t} \times  d} \) to denote pre-trained user and item embedding matrices in the target domain. Please note that, with the development of recommendation techniques, better CF methods can obtain better user and item preference representations, such as graph-based model (LightGCN [16] and self-supervised model (VGCL [44]). Here, for a fair comparison, we employ MF as the pre-training model.
+
+2) Domain Preference Mapping: After obtaining the pre-trained source domain user embeddings \( {\mathbf{U}}^{s} \) , we deploy our proposed PMOE mapping function to learn the approximate user embeddings. The brief process of PMOE includes user prototype learning via K-Means clustering, user-interacted sequence modeling with attention network, and prototype enhanced MOE learning. Thus, we obtain the approximated user embeddings in the target domain \( {\widehat{\mathbf{U}}}^{t} \) .
+
+3) Model Optimization: Given the approximated user em-beddings, we adopt task-oriented optimization [51], which is supervised by overlapping users' ratings in the target domain. The supervised loss is defined as follows:
+
+\[
+{\mathcal{L}}_{r} = \frac{1}{\left| {\mathcal{R}}_{o}^{t}\right| }\mathop{\sum }\limits_{{{r}_{ij} \in  {\mathcal{R}}_{o}^{t}}}{\left( {r}_{ij} - {\widehat{\mathbf{u}}}_{i}^{t}{\mathbf{v}}_{j}^{t}\right) }^{2}, \tag{13}
+\]
+
+where \( {\mathcal{R}}_{o}^{t} = \left\{  {{r}_{ij} \mid  {u}_{i} \in  {\mathcal{U}}^{o},{v}_{j}^{t} \in  {\mathcal{V}}^{t}}\right\} \) denotes the interactions of overlapping users in the target domain. In addition to the supervised rating loss, we combine our proposed PDA loss (12) to involve the non-overlapping users in model training. Therefore, we employ a multi-task learning framework to optimize our proposed MACDR:
+
+\[
+\mathcal{L}\left( \Theta \right)  = {\mathcal{L}}_{r} + \alpha {\mathcal{L}}_{\text{ dis }} + \lambda \parallel \Theta {\parallel }_{2}^{2}, \tag{14}
+\]
+
+where \( {L}_{r} \) is supervised rating prediction loss, \( {\mathcal{L}}_{\text{ dis }} \) is unsupervised discriminator loss (defined as (12)). \( \alpha \) is the balance parameter between two losses, \( \lambda \) is the regularization coefficient, \( \Theta \) is all model parameters of MACDR.
+
+4) Inference: For the non-overlapping cold-start users in the source domain, we first obtain their pre-trained embeddings, and learn their approximated preference in the target domain based on our proposed PMOE mapping. Finally, we employ the widely used inner product to compute the score of \( {i}^{th} \) cold-start user to \( {j}^{th} \) target item:
+
+\[
+{\widehat{r}}_{ij} = {\widehat{\mathbf{u}}}_{i}^{t}{\mathbf{v}}_{j}^{t}. \tag{15}
+\]
+
+The overall implement of MACDR is illustrated in the Algorithm 1.
+
+Algorithm 1: The Algorithm of MACDR.
+
+---
+
+	Input: Source domain interactions \( {\mathcal{R}}^{s} \) , Target domain
+
+	interactions \( {\mathcal{R}}^{t} \) , Overlapping users \( {\mathcal{U}}^{o} \) ;
+
+Pre-training Stage (based on MF):
+
+	1: Learn pre-trained user and item embedding matrices \( {\mathbf{U}}^{s} \)
+
+		and \( {\mathbf{V}}^{s} \) in the source domain;
+
+	: Learn pre-trained item embedding matrices \( {\mathbf{V}}^{t} \) in the
+
+		target domain;
+
+Mapping Stage:
+
+	Compute user prototypes via K-Means (6);
+
+	: Calculate interacted item sequences via (7)-(8);
+
+	While not converged
+
+	: Compute the user's target domain preference
+
+		representation using PMOE mapping via (9)-(11);
+
+	7: Calculate unsupervised discriminator loss via (12);
+
+	8: Calculate supervised rating prediction loss via (13);
+
+9: Update all parameters according to (14).
+
+End While
+
+Inference Stage:
+
+10: For a non-overlapping cold-start user \( {u}^{s} \) in the source
+
+		domain, we obtain the approximated preference in the
+
+		target domain (10), then compute the rating score via
+
+		(15).
+
+---
+
+## E. Model Analysis
+
+In this section, we discuss the complexity of our proposed model in terms of space complexity and time complexity. We use \( n, m \) to denote the number of users and items, subscripts \( s \) and \( t \) to denote specific domains, \( s \) is the source domain, \( t \) is the target domain, \( d \) denotes the dimension of embeddings.
+
+1) Space Complexity: As illustrated in Algorithm 1, the trainable parameters of MACDR are composed of two parts: embedding parameters and network parameters. Embedding parameters include user embeddings and item embeddings on the source domain as well as the target domain, all embedding parameters can be denoted as \( {\Theta }_{e} = \left\{  {{\mathbf{E}}_{u}^{s},{\mathbf{E}}_{i}^{s},{\mathbf{E}}_{u}^{t},{\mathbf{E}}_{i}^{t}}\right\} \) . Network parameters include attention network parameter \( {\Theta }_{a} \) , prototype enhanced mixture-of-experts (PMOE) mapping network parameters \( {\Theta }_{p} = \left\{  {{\mathbf{W}}_{g},{\mathbf{W}}_{h}}\right\} \) and domain discriminator network parameter \( {\Theta }_{D} \) . In fact, our model follows the pre-training-then-mapping paradigm, while most of the pre-trained networks such as NGCF [35] and GAT [30] require additional model parameters to be trained. This means that the bottleneck for training space complexity is usually in the pre-training module, and there is not much increase in storage space when compared to current mainstream models. Meanwhile, the pre-trained model only needs to be trained once in both the source and the target domains before it can be reused, which is convenient and affordable for recommender systems. To sum up, our model needs to learn embeddings of \( \left( {{n}_{s} + {m}_{s} + {n}_{t} + {m}_{t}}\right) d \) size and a few parameters for multi-layer linear perceptron (MLP) networks. As \( d \ll  \min \left( {{n}_{s},{m}_{s},{n}_{t},{m}_{t}}\right) \) , our proposed model can be considered fairly light.
+
+2) Time Complexity: The total time cost consists of two parts, pre-training and our method cost. For the pre-training phase, training time is the same as the general CF methods. The exact time consumption depends on the pre-trained model used(e.g., MF, LightGCN). For the mapping phase of our method, Our time is consumed in three main aspects. 1) we first need to cluster the users in the source domain and use the K-means algorithm to get the \( K \) prototype centers of the users with a method time complexity of \( O\left( {{n}_{s}{dK}}\right) \) . 2) Second, we need to train the PMOE mapping function for overlapping users of the two domains and sample non-overlapping users of the same prototype and different prototypes. 3) Finally, we utilize the score prediction loss function and discriminator loss to predict the scores of all existing interaction records.
+
+We implement the K-means clustering algorithm with Faiss-GPU, \( {}^{1} \) and this operation is performed only once in the whole training process, it cannot cause excessive time consumption. Meanwhile, prototype sampling, mapping function learning, and computation of losses are done on the mini-batch, considering the sparse feedback on the target domain, the time consumption of this step is negligible.
+
+To further illustrate the operational efficiency of our model, we recorded the time of a particular experiment for Task 3 in Table III. The format shows the total time on the left and the average time per epoch on the right. Our model has more user and item interaction data to learn the more complex mapping functions due to the need to sample both the same and different prototype users. Thus it is observed that our model has a similar runtime and convergence speed as models that need to utilize non-overlapping entities (LACDR [34], SSCDR [18]) to improve mapping function learning. However, compared to the learning of mapping functions, the pre-training process of the source and target domains tends to have more epochs and longer time, so the running time of our method is acceptable.
+
+## V. EXPERIMENTS
+
+## A. Experiments Settings
+
+1) Datasets: To evaluate the effectiveness of the proposed MACDR, we conduct experiments on the large-scale Amazon datasets [15]. Following the existing works [41], [45], [51], we select the Amazon-5cores datasets, \( {}^{2} \) which filter users/items with less than 5 ratings. Then, we define three CDR tasks: (1) Task 1: Sports \( \rightarrow \) Clothing; (2) Task 2: Movie \( \rightarrow \) Music; (3) Task 3: Book \( \rightarrow \) Movie. There are only a certain percentage of users overlap in both domains. The statistics of three cross-domain datasets are summarized in Table II.
+
+---
+
+\( {}^{1} \) [Online]. Available: https://faiss.ai/
+
+\( {}^{2} \) [Online]. Available: https://jmcauley.ucsd.edu/data/amazon/links.html/
+
+---
+
+TABLE II
+
+STATISTICS OF THE CROSS-DOMAIN TASKS ("OVERLAP" DENOTES THE NUMBER OF OVERLAPPING USERS)
+
+<table><tr><td rowspan="2">CDR Tasks</td><td colspan="2">Domain</td><td colspan="3">User</td><td colspan="2">Item</td><td colspan="2">Rating</td><td colspan="2">Density</td></tr><tr><td>Source</td><td>Target</td><td>Overlap</td><td>Source</td><td>Target</td><td>Source</td><td>Target</td><td>Source</td><td>Target</td><td>Source</td><td>Target</td></tr><tr><td>Task 1</td><td>Sports</td><td>Clothing</td><td>3,908</td><td>35,598</td><td>39,387</td><td>18,357</td><td>23,033</td><td>296,337</td><td>278,677</td><td>0.045%</td><td>0.030%</td></tr><tr><td>Task 2</td><td>Movie</td><td>Music</td><td>18,031</td><td>123,960</td><td>75,258</td><td>50,052</td><td>64,443</td><td>1,697,533</td><td>1,097,592</td><td>0.027%</td><td>0.023%</td></tr><tr><td>Task 3</td><td>Book</td><td>Movie</td><td>37,388</td><td>603,668</td><td>123,960</td><td>367,982</td><td>50,052</td><td>8,898,041</td><td>1,697,533</td><td>0.004%</td><td>0.027%</td></tr></table>
+
+TABLE III
+
+THE COMPARISON OF METHODS AND RUNTIME EFFICIENCY
+
+<table><tr><td>Methods</td><td>CPT</td><td>PPT</td><td>NOUI</td><td>Train time(s)</td></tr><tr><td>EMCDR</td><td>✓</td><td>✘</td><td>✘</td><td>116s/4.14s</td></tr><tr><td>SSCDR</td><td>✓</td><td>✘</td><td>✘</td><td>3894s/97.35s</td></tr><tr><td>LACDR</td><td>✓</td><td>✘</td><td>✓</td><td>2040s/68.00s</td></tr><tr><td>PTUPCDR</td><td>✘</td><td>✓</td><td>✘</td><td>159s/12.23s</td></tr><tr><td>HCCDR</td><td>✓</td><td>✓</td><td>✘</td><td>266s/16.63s</td></tr><tr><td>MACDR</td><td>✓</td><td>✓</td><td>✓</td><td>3313s/73.62s</td></tr></table>
+
+"CPT" represents the common preference transfer, "PPT" represents personalized preference transfer, "NOUI" represents non-overlapping users' information.
+
+2) Evaluation Metrics and Baselines: All used datasets have explicit feedback. Users rate each item with a 0-5 score. To evaluate the performances of the proposed MACDR with other baselines, we employ two widely used evaluation metrics: Mean Absolute Error (MAE) and Root Mean Square Error (RMSE). We compare our proposed MACDR with the following state-of-the-art baselines:
+
+- TGT denotes a simple MF model, which is only trained on target domain data.
+
+- CMF [28] is an extension of MF. In CMF, the embeddings of users are shared across the source and target domains.
+
+- EMCDR [25] is a classic CDR model that adopts a network as the mapping function to transfer the user embeddings from the source domain into the target domain.
+
+- SSCDR [18] considers that the proportion of common users or items between two domains is usually rare in real life, leading to poor mapping functions. Thus, SSCDR learns mapping functions via items in source domain in a semi-supervised method to enhance the robustness of the learned functions.
+
+- LACDR [34] employs an encoder-decoder structure to learn the mapping function by inputting all source domain user representations. Then it aligns the low-dimension embedding spaces of different domains, leading to better generalization.
+
+- PTUPCDR [51] is a state-of-the-art single-target CDR method. Differing from EMCDR, PTUPCDR learns a meta-network fed with users' characteristic embeddings to generate personalized mapping functions to achieve personalized transfer of preferences for each user.
+
+- HCCDR [41] generates high-quality user and item representations through heterogeneous latent factor modeling, relying on diverse semantic relations. Following the PTUPCDR framework, it employs a meta-network to learn domain-specific transfer functions, taking into account both individual and shared user characteristics.
+
+3) Implement Details: We implement our MACDR model and all baselines with Pytorch. \( {}^{3} \) We initialize all model parameters with a Gaussian distribution with a mean value of 0 and a standard variance of 0.01 , embedding size is fixed to 32 . For each method, We use Adam [19] as the optimizer for model optimization, and the learning rate is tuned by grid searches within \{0.0005, 0.001, 0.005, 0.01, 0.1\}. The batch size is 512 for all tasks. We adjust the number of expert networks among \{1, \( 2,4,8,{16},{32}\} \) . For discriminator learning of the proposed PDA, we tune the number of prototypes among \( \{ 0,{50},{100},{150},{200} \) , 250\} and sample different prototype users with different ratios for three tasks. Specifically, we adopt a 1:5 ratio for task1 and 1:1 for task2 and task3 due to consideration of time efficiency and the number of overlapping users. For a fair comparison, we use Matrix Factorization (MF) as the pre-training approach for all models. For all parameters, we give more detailed setup explanations and experiments in the parameter analysis.
+
+Following [51], we randomly select a proportion of overlapping users who are regarded as the bridge between the two domains (training the mapping function). The other overlapping users remove all their interactions in the target domain as the cold-start users for evaluation. In our experiments, we set the proportions of training overlapping users \( \beta \) as \( {20}\% ,{50}\% \) , and 80% of the total overlapping users, respectively. For all baselines, we search the parameters carefully for fair comparisons. We repeat all experiments 5 times and report the average results.
+
+## B. Performance Comparisons
+
+We compare our model with seven baselines in three CDR tasks. Table IV reports the results of MAE and RMSE [29] on the three CDR scenarios. From Table IV, we have the following observations:
+
+- TGT only uses data from the trainset of target domain, which means the test user embeddings are untrained due to data sparsity. As a result, it can not accurately obtain the representations of the cold-start users, resulting in poor performance compared to other cross-domain recommendation models.
+
+---
+
+\( {}^{3} \) [Online]. Available: https://www.pytorch.org/
+
+---
+
+TABLE IV
+
+RECOMMENDATION PERFORMANCE OF OUR PROPOSED MACDR AND OTHER BASELINES
+
+<table><tr><td></td><td>\( \beta \)</td><td>Metric</td><td>TGT</td><td>CMF</td><td>SSCDR</td><td>EMCDR</td><td>LACDR</td><td>PTUPCDR</td><td>HCCDR</td><td>MACDR</td><td>Improve</td></tr><tr><td rowspan="6">Task 1</td><td rowspan="2">20%</td><td>MAE</td><td>4.3874</td><td>1.5572</td><td>1.8001</td><td>1.5372</td><td>1.9178</td><td>1.3276</td><td>1.3154</td><td>1.1548*</td><td>12.21%</td></tr><tr><td>RMSE</td><td>5.0311</td><td>1.8533</td><td>2.0839</td><td>1.8254</td><td>2.1618</td><td>1.7068</td><td>1.6970</td><td>1.5303*</td><td>9.82%</td></tr><tr><td rowspan="2">50%</td><td>MAE</td><td>4.4119</td><td>1.1255</td><td>1.1733</td><td>1.1461</td><td>1.2128</td><td>1.0242</td><td>1.0145</td><td>0.9281*</td><td>8.51%</td></tr><tr><td>RMSE</td><td>5.0556</td><td>1.4483</td><td>1.4305</td><td>1.4104</td><td>1.4352</td><td>1.3266</td><td>1.3130</td><td>1.2248*</td><td>6.72%</td></tr><tr><td rowspan="2">80%</td><td>MAE</td><td>4.3797</td><td>1.0832</td><td>1.1360</td><td>1.0833</td><td>1.1487</td><td>0.9773</td><td>0.9644</td><td>0.8760*</td><td>9.17%</td></tr><tr><td>RMSE</td><td>5.0667</td><td>1.4041</td><td>1.3870</td><td>1.3439</td><td>1.3647</td><td>1.2769</td><td>1.2683</td><td>1.1768*</td><td>7.21%</td></tr><tr><td rowspan="6">Task 2</td><td rowspan="2">20%</td><td>MAE</td><td>4.5821</td><td>1.6490</td><td>1.2492</td><td>1.1997</td><td>1.2692</td><td>1.1313</td><td>1.1062</td><td>0.9597*</td><td>13.24%</td></tr><tr><td>RMSE</td><td>5.3703</td><td>2.1677</td><td>1.5616</td><td>1.5183</td><td>1.5531</td><td>1.4922</td><td>1.4655</td><td>1.3065*</td><td>10.85%</td></tr><tr><td rowspan="2">50%</td><td>MAE</td><td>4.5756</td><td>1.6470</td><td>1.0300</td><td>1.0499</td><td>1.0133</td><td>0.9613</td><td>0.8969</td><td>0.8151*</td><td>9.12%</td></tr><tr><td>RMSE</td><td>5.3594</td><td>2.1662</td><td>1.3025</td><td>1.3153</td><td>1.2545</td><td>1.2618</td><td>1.2058</td><td>1.0928*</td><td>9.37%</td></tr><tr><td rowspan="2">80%</td><td>MAE</td><td>4.4873</td><td>1.6267</td><td>1.0189</td><td>1.0051</td><td>0.9822</td><td>0.9299</td><td>0.8365</td><td>0.7734*</td><td>7.54%</td></tr><tr><td>RMSE</td><td>5.2890</td><td>2.1559</td><td>1.2812</td><td>1.2675</td><td>1.2113</td><td>1.2128</td><td>1.1247</td><td>1.0409*</td><td>7.45%</td></tr><tr><td rowspan="6">Task 3</td><td rowspan="2">20%</td><td>MAE</td><td>4.3086</td><td>1.7789</td><td>1.1247</td><td>1.1361</td><td>1.0887</td><td>1.1277</td><td>1.0387</td><td>0.8997*</td><td>13.38%</td></tr><tr><td>RMSE</td><td>4.9952</td><td>2.3458</td><td>1.4336</td><td>1.4380</td><td>1.3763</td><td>1.4561</td><td>1.3680</td><td>1.2011*</td><td>12.20%</td></tr><tr><td rowspan="2">50%</td><td>MAE</td><td>4.5821</td><td>1.7526</td><td>1.1621</td><td>1.1744</td><td>1.0468</td><td>1.0841</td><td>0.9389</td><td>0.8645*</td><td>7.92%</td></tr><tr><td>RMSE</td><td>4.4642</td><td>2.3193</td><td>1.4621</td><td>1.4666</td><td>1.2918</td><td>1.4100</td><td>1.2582</td><td>1.1579*</td><td>7.97%</td></tr><tr><td rowspan="2">80%</td><td>MAE</td><td>4.2939</td><td>1.6973</td><td>1.0932</td><td>1.1001</td><td>1.0319</td><td>1.0158</td><td>0.8743</td><td>0.8409*</td><td>3.82%</td></tr><tr><td>RMSE</td><td>4.9603</td><td>2.2526</td><td>1.3678</td><td>1.3763</td><td>1.2778</td><td>1.3130</td><td>1.1651</td><td>1.1094*</td><td>4.78%</td></tr></table>
+
+For MAE and RMSE metrics, the lower value denotes better performance. The best results are in boldface and the second best results are in underline. * indicates 0.05 level, paired t-test of MACDR (Ours) vs. the best baselines. Improve denotes relative improvement over the best baseline.
+
+- Compared with CMF, mapping-based CDR methods have better performances in most tasks. This demonstrates that pre-training & mapping is an effective schema than embedding sharing, either one-to-all mapping (SSCDR, EMCDR, LACDR) or one-to-one mapping (PTUPCDR, HCCDR).
+
+- On mapping-based methods, one-to-one mapping methods achieve better performances compared with one-to-all in most cases. This shows that the common preference transfer is not a good choice for cross-domain recommendation. However, single one-to-one mapping methods do not always present better performances, such as PTUPCDR worse than LACDR under some settings. The above observations indicate that a single common or personalized mapping is insufficient to capture the pattern of user preference transfer.
+
+- Although SSCDR and LACDR are proposed to mitigate the sparse supervision issue by incorporating information of non-overlapping users or items to model training, extensive experiments show that these methods do not always perform better than EMCDR. The probable reason is that SSCDR considers user and interaction items to be input to the same mapping function, whereas the items in the two domains do not overlap, making it difficult to guarantee the quality of the mapped item representation. LACDR utilizes all users in the source domain indiscriminately, which may result in the transfer of useless information and sub-optimal performances.
+
+- Our proposed MACDR significantly outperforms all baselines in all experimental settings, which strongly demonstrates the effectiveness of the proposed MACDR for cross-domain cold-start recommendation. The reasons are twofold: Compared with single one-to-all or one-toone mapping-based methods, MACDR designs a PMOE mapping module to flexibly combine the transfer patterns of user common and personalized preference. Besides, MACDR proposed an unsupervised PDA optimization strategy to fully exploit non-overlapping users to boost performances. In addition to significant performance improvement, we observe that MACDR has more performance gain under sparser overlapping scenarios. It strongly verifies that our proposed PDA optimization strategy can effectively alleviate the sparse supervision issue.
+
+## C. Ablation Study
+
+To investigate the effectiveness of each component of our model components, we conduct three variants of MACDR. MACDR-w/o PDA denotes that remove the Preference Distribution Alignment optimization of MACDR and only retain the Prototype enhanced Mixture-Of-Experts Mapping (PMOE) Module. MACDR-w/o PMOE denotes that only use linear mapping function which maintains the same input as the PMOE module and Preference Distribution Alignment optimization. MACDR-w/o PMOE+PDA denotes that only use linear mapping function which maintains the same input as PMOE module and rating prediction loss. Due to space constraints, we report the results for the three division cases in the Sports-Clothing dataset from Table V and ablation study of MACDR on the three tasks \( \left( {\beta  = {20}\% }\right) \) from Table VI. From Table V, we observe that MACDR-w/o PDA consistently improves MACDR-w/o PMOE+PDA under the three modes of data division, This verifies that the proposed PMOE mapping module can better combine the advantages of the common and personalized mapping functions to transfer preference knowledge. Besides, MACDR-w/o PMOE also shows better performances than MACDR-w/o PMOE+PDA, demonstrating the effectiveness of the unsupervised Preference Distribution Alignment optimization. Further, we find that the smaller the number of overlapping users in the training set, the greater the boosting of the PDA optimization strategy. This validates our view that users of the same prototype in the source domain are also closer after mapping. PDA utilizes non-overlapping users more rationally in the learning of the mapping function, which complements the sparse supervised signals of the mapping function and mitigates the difficulty that the mapping function heavily relies on the number of overlapping users. Finally, MACDR consistently outperforms both variants, proving the effectiveness of combining the two components.
+
+TABLE V
+
+ABLATION STUDY OF MACDR ON THE SPORTS-CLOTHING DATASET(TASK1)
+
+<table><tr><td rowspan="2">Models</td><td colspan="2">\( \beta  = {20}\% \)</td><td colspan="2">\( \beta  = {50}\% \)</td><td colspan="2">\( \beta  = {80}\% \)</td></tr><tr><td>MAE</td><td>RMSE</td><td>MAE</td><td>RMSE</td><td>MAE</td><td>RMSE</td></tr><tr><td>MACDR</td><td>1.1548(-)</td><td>1.5303(-)</td><td>0.9281(-)</td><td>1.2248(-)</td><td>0.8760(-)</td><td>1.1768(-)</td></tr><tr><td>MACDR-w/o PDA</td><td>1.1675(-1.10%)</td><td>1.5486(-1.20%)</td><td>0.9341(-0.65%)</td><td>1.2333(-0.69%)</td><td>0.8846(-0.98%)</td><td>1.1846(-0.66%)</td></tr><tr><td>MACDR-w/o PMOE</td><td>1.1817(-2.33%)</td><td>1.5550(-1.61%)</td><td>0.9484(-2.19%)</td><td>1.2405(-1.28%)</td><td>0.8937(-2.02%)</td><td>1.1837(-0.59%)</td></tr><tr><td>MACDR-w/o PMOE+PDA</td><td>1.2781(-10.68%)</td><td>1.6645(-8.77%)</td><td>1.0190(-9.79%)</td><td>1.3315(-8.71%)</td><td>0.9492(-8.36%)</td><td>1.2577(-6.87%)</td></tr></table>
+
+"MACDR-w/o PDA" denotes removing the PDA optimization of MACDR. "MACDR-w/o PMOE" denotes using a linear mapping function instead of PMOE for MACDR. "MACDR-w/o PMOE+PDA" denotes removing PDA and PMOE modules.
+
+TABLE VI
+
+ABLATION STUDY OF MACDR ON THE THREE TASKS \( \left( {\beta  = {20}\% }\right) \)
+
+<table><tr><td rowspan="2">Models</td><td colspan="2">Task 1</td><td colspan="2">Task 2</td><td colspan="2">Task 3</td></tr><tr><td>MAE</td><td>RMSE</td><td>MAE</td><td>RMSE</td><td>MAE</td><td>RMSE</td></tr><tr><td>MACDR</td><td>1.1548(-)</td><td>1.5303(-)</td><td>0.9597(-)</td><td>1.3065(-)</td><td>0.8997(-)</td><td>1.2011(-)</td></tr><tr><td>MACDR-w/o PDA</td><td>1.1675(-1.10%)</td><td>1.5486(-1.20%)</td><td>0.9682(-0.89%)</td><td>1.3251(-1.42%)</td><td>0.9088(-1.01%)</td><td>1.2205(-1.62%)</td></tr><tr><td>MACDR-w/o PMOE</td><td>1.1817(-2.33%)</td><td>1.5550(-1.61%)</td><td>0.9813(-2.25%)</td><td>1.3267(-1.55%)</td><td>0.9175(-1.98%)</td><td>1.2212(-1.67%)</td></tr><tr><td>MACDR-w/o PMOE+PDA</td><td>1.2781(-10.68%)</td><td>1.6645(-8.77%)</td><td>1.0424(-7.93%)</td><td>1.4029(-7.38%)</td><td>0.9635(-7.09%)</td><td>1.2756(-6.20%)</td></tr></table>
+
+From Table VI, we find consistent conclusions with Table V that our proposed components are effective on all datasets, with greater relative improvement for datasets with fewer overlapping users.
+
+Based on the above analysis, we can conclude that the prototype enhanced mixture-of-experts mapping module can provide a better mapping function than a single common or personalized function, and unsupervised preference distribution alignment optimization makes better use of non-overlapping users in the source domain to facilitate the learning of the mapping function. All of our proposed modules are beneficial to cross-domain cold-start recommendation.
+
+## D. Generality of PDA Optimization Strategy
+
+Our proposed PDA optimization strategy is an unsupervised optimization objective, that can easily coupled with other cross-domain cold-start baselines. Here, we conduct experiments to exploit the generality of the proposed PDA with various backbones. As shown in Fig. 5, we compare four SOTA baselines and their joint with PDA. Specifically, we select one-to-one mapping method (EMCDR), one-to-one mapping methods (PTUPCDR, HCCDR), and our proposed PMOE mapping method as backbones. Due to the space limit, we only report comparisons on two datasets. From this figure, we can find that all CDR backbones achieve performance improvements when joined with the PDA optimization strategy. This indicates that our proposed PDA optimization strategy is general to other cross-domain cold-start models, not just our proposed PMOE mapping method. Besides, we find that PDA contributes most in the worst backbone, i.e., over 1.3% RMSE improvement on the EMCDR backbone. Overall, PDA is a general component, that is flexible and easily equipped to current mapping-based methods and boosts their performances significantly.
+
+![9_887_882_751_244_0.jpg](images/9_887_882_751_244_0.jpg)
+
+Fig. 5. Generality of PDA combined with various backbones.
+
+## E. Parameter Sensitivity
+
+In this part, we investigate the impact of hyper-parameters in MACDR. We first analyze the number of experts \( X \) , which plays an important role in the PMOE mapping module. Next, we study the impact of clustering prototype numbers \( K \) . Besides, we explore the effect of the number of negative samples \( {N}_{s} \) for discriminator training and the effect of loss weights \( \alpha \) , Finally, we explore the effect of different gate network inputs on model performance.
+
+![10_103_186_1531_350_0.jpg](images/10_103_186_1531_350_0.jpg)
+
+Fig. 6. Performance comparisons under different experts number \( X \) , prototype number \( K \) , negative number \( {N}_{s} \) and loss weight \( \alpha \) .
+
+A - Effect of Experts Numbers \( X \) . To exploit the effect of different expert numbers, we search the parameter \( X \) in the range of \( \{ 2,4,8,{16},{32}\} \) . Due to space constraints, we only compare experimental results of different expert numbers on task1 As shown in Fig. 6(a), and other datasets with similar findings. We observe that the best experts number is 4 in task1. That means a small number of expert settings can achieve optimal performances, and the size of the number of experts does not have a particularly large impact on the final results, which we attribute to the fact that the number of overlapping users training the mapping function is sparse and does not require a complex mapping network. Meanwhile, we add an L2 regularity term for the model parameters so that they do not vary significantly even with a larger number of model parameters. However, we find that the performance is sensitive to the number of experts when the data is divided in a 2:8 ratio for task1. We argue the possible reason is that the number of overlapping users in the training set is limited, which can easily cause overfitting of the model.
+
+B - Effect of Prototype Numbers \( K \) . To investigate the effect of prototype numbers, we set the prototype numbers from zero to three hundred. Since we only cluster for all users in the source domain one time, we don't need to for parametric analysis of all possible ways of dividing data for the three tasks, so we focus on determining the optimal number of clustering centers for one specific way of dividing the data for all three tasks. We illustrate the experimental results in Fig. 6(b). Please note that when \( K = 0 \) , MACDR degenerates to MACDR-w/o PDA and the PMOE input without the user prototype embeddings. Thus, It has the worst results. From this figure, We find that the optimal number of prototypes varies from task to task, and the optimal number of prototypes is larger for tasks with a larger number of users in the source domain such as the optimal number of prototypes is 100in task1, and 200in task2 and task3.
+
+\( C \) - Effect of Negative Number \( {N}_{s} \) for Discriminator. As can be observed from Fig. 6(c), we conduct experiments to analyze the impact of the number of negative samples for the discriminator training. We can find that the optimal values of \( {N}_{s} \) are different for three tasks, and we summarize the reasons as follows. First, tasks with fewer overlapping users tend to sample slightly larger optimal values than tasks with more overlapping users. For example, the optimal value for task1 is 5 , and the optimal values for task2 and task3 are 1 or 2. Second, smaller \( {N}_{s} \) samples can already achieve the optimal performances, and too many \( {N}_{s} \) can lead to performance degradation, which we argue may be since too many non-prototypical samples may lead to some relevant prototype distributions tending to be different, resulting in suboptimal performances.
+
+TABLE VII
+
+PERFORMANCE OF GATE NETWORK INPUTS ON TASK 1
+
+<table><tr><td>Variant</td><td>User</td><td>Item Sequence</td><td>Prototype</td><td>MAE</td><td>RMSE</td></tr><tr><td>PMOE</td><td></td><td></td><td>✓</td><td>0.9281</td><td>1.2248</td></tr><tr><td>\( {\mathrm{{PMOE}}}_{a} \)</td><td></td><td>✓</td><td></td><td>0.9421</td><td>1.2391</td></tr><tr><td>\( {\mathrm{{PMOE}}}_{b} \)</td><td>✓</td><td></td><td>✓</td><td>0.9405</td><td>1.2379</td></tr><tr><td>\( {\mathrm{{PMOE}}}_{c} \)</td><td></td><td>✓</td><td>✓</td><td>0.9286</td><td>1.2250</td></tr><tr><td>\( {\mathrm{{PMOE}}}_{d} \)</td><td>✓</td><td>✓</td><td>✓</td><td>0.9340</td><td>1.2291</td></tr></table>
+
+\( D \) - Effect of Loss Weights \( \alpha \) . As illustrated in Fig. 6(d), we carefully tune the loss weights \( \alpha \) on the three tasks. We observe that MACDR achieves the best performances when \( \alpha  = {100} \) on the task1, \( \alpha  = {100} \) on the task2 and \( \alpha  = {10} \) on the task3. Besides, when \( \alpha  = 0 \) , the PDA optimization strategy is not used and the model has the worst result. The performance increases first and then drops quickly while \( \alpha \) increases. It indicates that proper unsupervised loss weights can make reasonable use of a large number of non-overlapping users and effectively improve the problem of sparse supervision of the mapping function, but a too-strong unsupervised loss will lead to model optimization neglecting the rating prediction loss.
+
+E - Input of Gate Network. We chose to test the effect of PMOE module variants with multiple types of gate network inputs on the final performance of Task 1 as shown in Table VII. We observe that \( {\mathrm{{PMOE}}}_{d} \) performs much lower than \( {\mathrm{{PMOE}}}_{c} \) , which indicates that the inputs to the gate network do not require pre-trained users and item sequence representations in the source domain. \( {\mathrm{{PMOE}}}_{c} \) and PMOE have competitive results and are far better than other variants, which indicates that good results are achieved as long as the gate network contains the input features of the user prototype representations, whereas, without the prototype inputs, the performance drops drastically. Similar conclusions are found for other tasks as well as for divided dataset ratios. This validates our hypothesis that users with the same prototypes have the same gate logits, so that the mapping function can capture the transfer patterns of both common and personalized user preferences, achieving the best performance.
+
+![11_142_190_706_295_0.jpg](images/11_142_190_706_295_0.jpg)
+
+Fig. 7. T-SNE visualization and KL divergence values of 1000 randomly sampled user embeddings in target-domain feature space.
+
+## F. Visualization
+
+In this section, we analyze the user embeddings generated by our model MACDR and two common cross-domain cold-start recommendation models. We reveal the relationship between ground-truth embeddings in the target domain and the transfer embeddings obtained through various mapping functions to help us better understand the advantages of MACDR.
+
+We use t-SNE [10] implemented in scikit-learn package to visualize 1000 randomly sampled test users embeddings in task1 with \( \beta  = {0.2} \) . To obtain the best user latent factors as ground truth, we add the test users into the train set and train an additional TGT model (i.e, ground truth). Meanwhile, we also calculate the KL divergence values between the various baseline methods and the target domain ground-truth representations shown in Fig. 7, where yellow and green color denote EMCDR and PTUPCDR models, respectively, red color denote our model, and blue color denotes ground-truth. Ideally, the distributions of the transformed embeddings are the same as the target embeddings. From Fig. 7, we can observe that the distribution of EMCDR representations is relatively centralized, but does not fit the true distribution of users very well, which may be because a single and shared mapping function between the source and target domains cannot learn the relatively complex relationship between the source and target domains well. PTUPCDR employs a meta-network to allow different users to have personalized transfer functions, which alleviates the situation that the common mapping function cannot fit the relationship well. Since the mapping function is personalized for different users, it is difficult to capture the correlation across users, resulting in a diffuse distribution of representations and sub-optimal performance. Compared with other methods, TGT and MACDR have the smallest t-SNE visualization representation distance and KL divergence value, which implies that our model has the best result in transferring the knowledge of the target domain. The most important reason why MACDR achieves competitive results is that our model combines the commonalities and characteristics between domains and designs an unsupervised loss to exploit user prototypes to constrain similar users to have similar behaviors, which gives more supervised signals to the mapping function.
+
+## VI. CONCLUSION
+
+In this paper, we propose a novel MACDR model for cross-domain cold-start recommendation. Specifically, we argue that current mapping functions are sub-optimal with strict assumptions, and propose a novel prototype-enhanced MOE (PMOE) module to combine the transfer patterns of common and personalized preferences. Besides, to alleviate the sparse supervision from the limited overlapping users, we propose an unsupervised preference distribution alignment (PDA) optimization based on equivariant learning. The core idea is that preference-similar users share a closer representation distribution after mapping. To this end, the proposed PDA optimization strategy can involve non-overlapping users in model training, which effectively alleviates the data sparsity issue. We conduct extensive experiments on three real-world datasets to demonstrate the effectiveness of the proposed MACDR.
+
+Although our framework emphasizes the importance of incorporating non-overlapping users for mapping function learning, it still fails to get rid of the reliance on overlapping users. Additionally, extending the mapping function-based learning paradigm to multiple domains poses challenges. In the future, we consider eliminating the limitation of overlapping users from technical dependencies and exploring cross-domain cold-start recommendations in scenarios without overlapping users. Meanwhile, we would like to broaden the application scenarios of our approach to adapt multiple domains, not just dual domains.
+
+## REFERENCES
+
+[1] G. Adomavicius and T. Alexander, "Toward the next generation of recommender systems: A survey of the state-of-the-art and possible extensions," IEEE Trans. Knowl. Data Eng., vol. 17, no. 6, pp. 734-749, Jun. 2005.
+
+[2] H. Bai et al., "GoRec: A generative cold-start recommendation framework," in Proc. ACM Int. Conf. Multimedia, 2023, pp. 1004-1012.
+
+[3] H. Bai et al., "Multimodality invariant learning for multimedia-based new item recommendation," in Proc. Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2024, pp. 677-686.
+
+[4] M. Cai et al., "Popularity-aware alignment and contrast for mitigating popularity bias," in Proc. ACM SIGKDD Int. Conf. Knowl. Discov. Data Mining, 2024, pp. 187-198.
+
+[5] M. Cai et al., "Mitigating recommendation biases via group-alignment and global-uniformity in representation learning," ACM Trans. Intell. Syst. Technol., vol. 15, 2024, Art. no. 101.
+
+[6] J. Cao, S. Li, B. Yu, X. Guo, T. Liu, and B. Wang, "Towards universal cross-domain recommendation," in Proc. ACM Int. Conf. Web Search Data Mining, 2023, pp. 78-86.
+
+[7] J. Bi, L. Song, M. Yao, Z. Wu, J. Wang, and J. Xiao, "DCDIR: A deep cross-domain recommendation system for cold start users in insurance domain," SIGIR, 2020.
+
+[8] L. Chen et al., "Improving recommendation fairness via data augmentation," in Proc. Int. Conf. World Wide Web, 2023, pp. 1012-1020.
+
+[9] Y. Chen, Z. Liu, J. Li, J. McAuley, and C. Xiong, "Intent contrastive learning for sequential recommendation, in Proc. Int. Conf. World Wide Web, 2022, pp. 2172-2182.
+
+[10] V. der Maaten, Laurens, and H. Geoffrey, "Visualizing data using t-SNE," J. Mach. Learn. Res., vol. 9, pp. 2579-2605, 2008.
+
+[11] X. Du, X. Wang, X. He, Z. Li, J. Tang, and C. Tat-Seng, "How to learn item representation for cold-start multimedia recommendation?," in Proc. ACM Int. Conf. Multimedia, 2020.
+
+[12] Y. Du, X. Zhu, L. Chen, Z. Fang, and Y. Gao, "MetaKG: Meta-learning on knowledge graph for cold-start recommendation," IEEE Trans. Knowl. Data Eng., vol. 35, no. 10, pp. 9850-9863, Oct. 2023.
+
+[13] C. Finn, P. Abbeel, and S. Levine, "Model-agnostic meta-learning for fast adaptation of deep networks," in Proc. Int. Conf. Mach. Learn., 2017, pp. 1126-1135.
+
+[14] C. Gao et al., "Bursting filter bubbles by counterfactual interactive recommender system," ACM Trans. Intell. Syst. Technol., vol. 42, no. 1, pp. 1-27, 2023.
+
+[15] R. He and J. McAuley, "Ups and downs: Modeling the visual evolution of fashion trends with one-class collaborative filtering," in Proc. Int. Conf. World Wide Web, 2016, pp. 507-517.
+
+[16] X. He, K. Deng, X. Wang, Y. Li, Y. Zhang, and M. Wang, "LightGCN: Simplifying and powering graph convolution network for recommendation," in Proc. Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2020, pp. 639-648.
+
+[17] Z. He et al., "Double correction framework for denoising recommendation," in Proc. ACM SIGKDD Int. Conf. Knowl. Discov. Data Mining, 2024, pp. 1062-1072.
+
+[18] S. Kang, J. Hwang, D. Lee, and H. Yu, "Semi-supervised learning for cross-domain recommendation to cold-start users," in Proc. ACM Int. Conf. Inf. Knowl. Manage., 2019, pp. 1563-1572.
+
+[19] P. D. Kingma and L. J. Ba, "Adam: A method for stochastic optimization," in Proc. Int. Conf. Learn. Representations, 2015.
+
+[20] Y. Koren, B. Robert, and V. Chris, "Matrix factorization techniques for recommender systems," Computer, vol. 42, pp. 30-37, 2009.
+
+[21] B. Li, Q. Yang, and X. Xue, "Can movies and books collaborate? cross-domain collaborative filtering for sparsity reduction," in Proc. Int. Joint Conf. Artif. Intell., 2009, pp. 2052-2057.
+
+[22] P. Li and A. Tuzhilin, "DDTCDR: Deep dual transfer cross domain recommendation," in Proc. ACM Int. Conf. Web Search Data Mining, 2020, pp. 331-339.
+
+[23] D. Lian, Y. Wu, Y. Ge, X. Xie, and E. Chen, "Geography-aware sequential location recommendation," in Proc. ACM SIGKDD Int. Conf. Knowl. Discov. Data Mining, 2020, pp. 2009-2019.
+
+[24] Z. Lin, C. Tian, Y. Hou, and W. X. Zhao, "Improving graph collaborative filtering with neighborhood-enriched contrastive learning," in Proc. Int. Conf. World Wide Web, 2022, pp. 2320-2329.
+
+[25] T. Man, H. Shen, X. Jin, and X. Cheng, "Cross-domain recommendation: An embedding and mapping approach," in Proc. Int. Joint Conf. Artif. Intell., 2017, pp. 2464-2470.
+
+[26] N. Mirbakhsh and C. X. Ling, "Improving top-N recommendation for cold-start users via cross-domain information," ACM Trans. Knowl. Discov. Data, vol. 9, 2015, Art. no. 33.
+
+[27] T. Qian, Y. Liang, Q. Li, and H. Xiong, "Attribute graph neural networks for strict cold start recommendation," IEEE Trans. Knowl. Data Eng., vol. 34, no. 8, pp. 3597-3610, Aug. 2022.
+
+[28] A. P. Singh and G. J. Gordon, "Relational learning via collective matrix factorization," in Proc. ACM SIGKDD Int. Conf. Knowl. Discov. Data Mining, 2008, pp. 650-658.
+
+[29] H. Steck, "Evaluation of recommendations: Rating-prediction and ranking," in Proc. 7th ACM Conf. Recommender Syst., 2013, pp. 213-220.
+
+[30] P. Veličković, G. Cucurull, A. Casanova, A. Romero, P. Lio, and Y. Bengio, "Graph attention networks," in Proc. Int. Conf. Learn. Representations, 2018.
+
+[31] M. Volkovs, G. Yu, and T. Poutanen, "DropoutNet: Addressing cold start in recommender systems," in Proc. Int. Conf. Neural Inf. Process. Syst., 2017, pp. 4957-4966.
+
+[32] H. Wang et al., "MCNE: An end-to-end framework for learning multiple conditional network representations of social network," in Proc. ACM SIGKDD Int. Conf. Knowl. Discov. Data Mining, 2019, pp. 1064-1072.
+
+[33] L. Wang et al., "Preference-adaptive meta-learning for cold-start recommendation," in Proc. Int. Joint Conf. Artif. Intell., 2021, pp. 1607-1614.
+
+[34] T. Wang, F. Zhuang, Z. Zhang, D. Wang, J. Zhou, and Q. He, "Low-dimensional alignment for cross-domain recommendation," in Proc. ACM Int. Conf. Inf. Knowl. Manage., 2021, pp. 1064-1072.
+
+[35] X. Wang, X. He, M. Wang, F. Feng, and T.-S. Chua, "Neural graph collaborative filtering," in Proc. Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2019, pp. 165-174.
+
+[36] Y. Wei et al., "Contrastive learning for cold-start recommendation," in Proc. ACM Int. Conf. Multimedia, 2021, pp. 5382-5390.
+
+[37] C. Wu, X. Wang, D. Lian, X. Xie, and E. Chen, "A causality inspired framework for model interpretation," in Proc. ACM SIGKDD Int. Conf. Knowl. Discov. Data Mining, 2023, pp. 2731-2741.
+
+[38] L. Wu, X. He, X. Wang, K. Zhang, and M. Wang, "A survey on accuracy-oriented neural recommendation: From collaborative filtering to information-rich recommendation," IEEE Trans. Knowl. Data Eng., vol. 35, no. 5, pp. 4425-4445, May 2023.
+
+[39] L. Wu, Y. Yang, L. Chen, D. Lian, R. Hong, and M. Wang, "Learning to transfer graph embeddings for inductive graph based recommendation," in Proc. Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2020, pp. 1211-1220.
+
+[40] L. Wu, Y. Yang, K. Zhang, R. Hong, Y. Fu, and M. Wang, "Joint item recommendation and attribute inference: An adaptive graph convolutional network approach," in Proc. Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2020, pp. 679-688.
+
+[41] J. Xu, X. Wang, H. Zhang, and P. Lv, "Heterogeneous and clustering-enhanced personalized preference transfer for cross-domain recommendation," Inf. Fusion, vol. 99, 2023, Art. no. 101892.
+
+[42] Y. Yang, L. Wu, R. Hong, K. Zhang, and M. Wang, "Enhanced graph learning for collaborative filtering via mutual information maximization," in Proc. Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2021, pp. 71-80.
+
+[43] Y. Yang, L. Wu, Z. Wang, Z. He, R. Hong, and M. Wang, "Graph bottlenecked social recommendation," in Proc. ACM SIGKDD Int. Conf. Knowl. Discov. Data Mining, 2024, pp. 3853-3862.
+
+[44] Y. Yang et al., "Generative-contrastive graph learning for recommendation," in Proc. Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2023, pp. 1117-1126.
+
+[45] F. Yuan, L. Yao, and B. Benatallah, "DARec: Deep domain adaptation for cross-domain recommendation via transferring rating patterns," in Proc. Int. Joint Conf. Artif. Intell., 2019, pp. 4227-4233.
+
+[46] T. Zang, Y. Zhu, H. Liu, R. Zhang, and J. Yu, "A survey on cross-domain recommendation: Taxonomies, methods, and future directions," ACM Trans. Inf. Syst., vol. 41, 2022, Art. no. 42.
+
+[47] C. Zhao, C. Li, R. Xiao, H. Deng, and A. Sun, "CATN: Cross-domain recommendation for cold-start users via aspect transfer network," in Proc. Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2020, pp. 229-238.
+
+[48] F. Zhu, Y. Wang, C. Chen, G. Liu, M. Orgun, and J. Wu, "A deep framework for cross-domain and cross-system recommendations," in Proc. Int. Joint Conf. Artif. Intell., 2018, pp. 3711-3717.
+
+[49] F. Zhu, Y. Wang, C. Chen, J. Zhou, L. Li, and G. Liu, "Cross-domain recommendation: Challenges, progress, and prospects," in Proc. Int. Joint Conf. Artif. Intell., 2021, pp. 4721-4728.
+
+[50] Y. Zhu et al., "Transfer-meta framework for cross-domain recommendation to cold-start users," in Proc. Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2021, pp. 1813-1817.
+
+[51] Y. Zhu et al., "Personalized transfer of user preferences for cross-domain recommendation," in Proc. ACM Int. Conf. Web Search Data Mining, 2022, pp. 1507-1515.
+
+[52] Z. Zhu, S. Sefati, P. Saadatpanah, and J. Caverlee, "Contrastive learning for cold-start recommendation," in Proc. Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2020, pp. 5382-5390.
+
+![12_875_1205_230_281_0.jpg](images/12_875_1205_230_281_0.jpg)
+
+Zihan Wang is currently working towards the master's degree with the Hefei University of Technology, China. He has published papers in referred conferences, such as KDD and IJCAI. His research interests are cross-domain recommender systems and graph learning.
+
+![12_878_1513_226_272_0.jpg](images/12_878_1513_226_272_0.jpg)
+
+Yonghui Yang received the master's degree from the Hefei University of Technology, in 2021. He is currently working toward the PhD degree with the Hefei University of Technology, China. He has published several papers in referred conferences and journals, such as KDD, SIGIR, IJCAI, ACM Multimedia, IEEE Transactions on Knowledge and Data Engineering, and IEEE Transactions on Big Data. His research interests include graph learning and recommender systems.
+
+![12_881_1830_219_274_0.jpg](images/12_881_1830_219_274_0.jpg)
+
+Le Wu (Member, IEEE) received the PhD degree from the University of Science and Technology of China (USTC). She is currently a professor with the Hefei University of Technology (HFUT), China. Her general area of research interests are data mining and knowledge engineering, personalized recommendation, trustworthy user modeling and applications. She has published more than 70 papers in leading journals and conferences, such as IEEE Transactions on Knowledge and Data Engineering, ACM Transactions on Information Systems, WWW, SIGIR, KDD, NeurIPS and so on. She is an associate editor of IEEE Trans. on Big Data, AI Open and Frontieres of Computer Science.
+
+![13_117_190_223_276_0.jpg](images/13_117_190_223_276_0.jpg)
+
+Richang Hong (Senior Member, IEEE) received the PhD degree from the University of Science and Technology of China, in 2008. He is currently a professor with the Hefei University of Technology. He has published more than 100 publications in the areas of his research interests, which include multimedia question answering, video content analysis, and pattern recognition. He is a member of the Association for Computing Machinery. He was a recipient of the Best Paper award in the ACM Multimedia 2010.
+
+![13_892_190_224_276_0.jpg](images/13_892_190_224_276_0.jpg)
+
+Meng Wang (Fellow, IEEE) received the BE and PhD degree in the Special Class for the Gifted Young and the Department of Electronic Engineering and Information Science from the University of Science and Technology of China (USTC), Hefei, China, in 2003 and 2008, respectively. is a professor with the Hefei University of Technology, China. His current research interests include multimedia content analysis, computer vision, and pattern recognition. He has authored more than 200 book chapters, journal and conference papers in these areas. He is the recipient of the ACM SIGMM Rising Star Award 2014. He is an associate editor of IEEE Transactions on Knowledge and Data Engineering (IEEE TKDE), IEEE Transactions on Circuits and Systems for Video Technology (IEEE TCSVT), IEEE Transactions on Multimedia (IEEE TMM), and IEEE Transactions on Neural Networks and Learning Systems (IEEE TNNLS).

@@ -1,0 +1,543 @@
+# Separated Contrastive Learning for Matching in Cross-domain Recommendation with Curriculum Scheduling
+
+Heng Chang
+
+changh.heng@gmail.com
+
+Huawei Technologies Co.,
+
+Ltd.
+
+Beijing, China
+
+Liang Gu*
+
+guliang3@huawei.com
+
+Huawei Technologies Co.,
+
+Ltd.
+
+Shenzhen, China
+
+Cheng Hu
+
+hucheng9@huawei.com
+
+Huawei Technologies Co.,
+
+Ltd.
+
+Shenzhen, China
+
+Zhinan Zhang
+
+zhangzhinan5@huawei.com
+
+Huawei Technologies Co.,
+
+Ltd.
+
+Shenzhen, China
+
+Hong Zhu
+
+zhuhong8@huawei.com
+
+Huawei Technologies Co.,
+
+Ltd.
+
+Shenzhen, China
+
+Yuhui Xu*
+
+xyh6666@gmail.com
+
+Huawei Technologies Co.,
+
+Ltd.
+
+Shenzhen, China
+
+Yuan Fang
+
+frank.fy@huawei.com
+
+Huawei Technologies Co.,
+
+Ltd.
+
+Shenzhen, China
+
+Zhen Chen
+
+zzz.chen@huawei.com
+
+Huawei Technologies Co.,
+
+Ltd.
+
+Shenzhen, China
+
+## Abstract
+
+Cross-domain recommendation (CDR) is a task that aims to improve the recommendation performance in a target domain by leveraging the information from source domains. Contrastive learning methods have been widely adopted among intra-domain (intra-CL) and inter-domain (inter-CL) users/items for their representation learning and knowledge transfer during the matching stage of CDR. However, we observe that directly employing contrastive learning on mixed-up intra-CL and inter-CL tasks ignores the difficulty of learning from inter-domain over learning from intra-domain, and thus could cause severe training instability. Therefore, this instability deteriorates the representation learning process and hurts the quality of generated embeddings. To this end, we propose a novel framework named SCCDR built up on a separated intra-CL and inter-CL paradigm and a stop-gradient operation to handle the drawback. Specifically, SCCDR comprises two specialized curriculum stages: intra-inter separation and inter-domain curriculum scheduling. The former stage explicitly uses two distinct contrastive views for the intra-CL task in the source and target domains, respectively. Meanwhile, the latter stage deliberately tackles the inter-CL tasks with a curriculum scheduling strategy that derives effective curricula by accounting for the difficulty of negative samples anchored by overlapping users. Empirical experiments on various open-source datasets and an offline proprietary industrial dataset extracted from a real-world recommender system, and an online \( \mathrm{A}/\mathrm{B} \) test verify that SCCDR achieves state-of-the-art performance over multiple baselines.
+
+## CCS Concepts
+
+- Information systems \( \rightarrow \) Recommender systems.
+
+## Keywords
+
+contrastive learning, cross-domain recommendation, curriculum learning
+
+## ACM Reference Format:
+
+Heng Chang, Liang Gu, Cheng Hu, Zhinan Zhang, Hong Zhu, Yuhui Xu, Yuan Fang, and Zhen Chen. 2025. Separated Contrastive Learning for Matching in Cross-domain Recommendation with Curriculum Scheduling. In Companion Proceedings of the ACM Web Conference 2025 (WWW Companion '25), April 28-May 2, 2025, Sydney, NSW, Australia. ACM, New York, NY, USA, 10 pages. https://doi.org/10.1145/3701716.3715260
+
+## 1 Introduction
+
+Recommender systems are widely used to provide personalized and relevant suggestions to users based on their preferences and behaviors \( \left\lbrack  {{14},{15},{35},{49},{55},{66}}\right\rbrack \) . Most real-world large-scale recommender systems employ the conventional two-stage architecture consisting of matching and ranking. The matching module [55] (also known as candidate generation [14]) aims to enhance the efficiency and diversity of the system, by retrieving a small subset of (typically hundreds of) item candidates from the million-level large corpora. Subsequently, the ranking module assigns the specific ranks of items for the final results.
+
+As the scale of recommender systems expands and the diversity of recommendation contexts broadens, the integration of supplementary data sources, or domains, is essential to enhance content comprehensiveness and diversity. Nonetheless, recommender systems frequently confront the challenges of data sparsity and cold-start phenomena, particularly when insufficient or noisy data plague the target domain. Cross-domain recommendation (CDR) is a task that aims to address this challenge by leveraging the information from source domains that have rich and high-quality data \( \left\lbrack  {{10},{24},{54}}\right\rbrack \) . In this way, CDR can improve the recommendation performance in the target domain by transferring the knowledge from the source domains. During CDR, contrastive learning (CL) \( \left\lbrack  {{12},{38},{58}}\right\rbrack \) has been widely adopted for representation learning and knowledge transfer, especially in the matching stage, where the goal is to retrieve the most relevant items for a given user \( \left\lbrack  {{15},{54}}\right\rbrack \) . CL can be applied to both intra-domain (intra-CL) and inter-domain (inter-CL) nodes, where intra-domain nodes are the users and items within the same domain, and inter-domain nodes are the users and items across different domains.
+
+---
+
+*Corresponding authors.
+
+---
+
+![1_202_236_575_475_0.jpg](images/1_202_236_575_475_0.jpg)
+
+Figure 1: The stability comparison between intra-CL and inter-CL losses during the training of cross-domain recommendation task on Amazon Books-Videos dataset.
+
+While the intra-domain is comparably straightforward for the model to learn since the interaction pattern among users and items within the same domain are easier to capture than that in the inter-domain, conventional approaches [54, 61] usually directly employ contrastive learning on mixed-up intra-CL and inter-CL tasks. However, as shown in Figure 1, we observe that this mixed-up strategy ignores the difficulty of learning from inter-domain over intra-domain, and thus could cause significant training instability (please kindly refer to Section 4 for more detailed analysis). This instability, therefore, could hurt the following representation learning process as well as the knowledge transfer from the source domain to the target domain.
+
+To this end, we propose a novel Separated contrastive learning with Curriculum Scheduling framework for matching in CDR, namely SCCDR, to handle this deficiency in training as shown in Figure 2. Specifically, SCCDR consists of two specialized curriculum stages: intra-inter separation and inter-domain curriculum scheduling. The former stage explicitly uses two distinct contrastive views for the intra-CL task in the source and target domains, respectively. Meanwhile, the latter stage tackles the inter-CL tasks with a curriculum scheduling strategy that derives effective curricula by accounting for the difficulty of negative samples anchored by overlapping users. Furthermore, a stop-gradient operation is introduced between the two stages to restrict the excessive gradient oriented from the source domain during the process of knowledge transfer. Our contributions are summarized as follows:
+
+- To the best of our knowledge, we are the first to consider the different roles of intra-CL and inter-CL in training for matching in CDR through a separated intra-CL and inter-CL paradigm with a stop-gradient operation.
+
+- To alleviate the impact of the potential noises hidden in the negative samples, we further propose using a curriculum scheduler during the inter-CL stage for better representation calibration.
+
+- We conduct extensive experiments on both open-source and proprietary industrial datasets. Empirical results show that our SCCDR framework brings consistent performance improvements over various SOTA baselines regarding both offline and online evaluations, demonstrating its generic and powerful ability for matching tasks in CDR.
+
+## 2 Related Work
+
+### 2.1 Cross-domain Recommendation
+
+Cross-domain recommendations (CDR) aim to enhance the accuracy of recommendations in a target domain by leveraging knowledge from a source domain \( \left\lbrack  {{31},{61},{62},{64}}\right\rbrack \) . CoNet [24] introduces cross-connections to facilitate dual knowledge transfer across domains, while MiNet [39], featuring inter-level and interest-level attention mechanisms, jointly models users' long-term and short-term interests. DASL [30] employs a dual embedding and attention strategy for iterative information transfer between domains. AFT [21] employs a generative adversarial network to master feature translations across diverse domains. Chen et al. [10] consider behavior-level effect during the loss optimization process by proposing a generic behavioral importance-aware optimization framework. Additionally, CDR offers solutions to the cold-start problem, with CCDR [54] and SSCDR [26] advocating for contrastive learning and semi-supervised learning approaches, respectively, to compensate for the scarcity of user behavior data.
+
+### 2.2 Contrastive Learning in Recommendation
+
+Contrastive learning (CL), aimed at acquiring high-quality representations through self-supervised techniques, has garnered significant attention across various fields of machine learning [11, 18, 67]. Motivated by the accomplishments of CL across different domains, there has been a surge in innovative research efforts that incorporate CL into recommender systems [34, 40, 65]. Zhang et al. [60] propose GDCL to capture the structural properties of the user-item interaction graph more effectively. Yu et al. [59] introduce a simple CL method that eschews graph augmentations in favor of injecting uniform noise into the embedding space, thereby generating contrastive views. AdaGCL [25] employs two adaptive contrastive view generators for data augmentation, significantly enhancing the collaborative filtering (CF) paradigm.
+
+## 3 Preliminaries
+
+In this section, we start by defining the notations, then introduce preliminaries of the task of CDR in the matching stage and the basics of contrastive learning with GNN-based encoders.
+
+Following existing works \( \left\lbrack  {{32},{46},{54}}\right\rbrack \) , we model the user-item interactions in the recommendation scenario as graphs. We denote the graph as \( \mathcal{G} = \left( {\mathcal{U},\mathcal{T},\mathcal{E}}\right) \) , where \( \mathcal{U},\mathcal{T},\mathcal{E} \subseteq  \mathcal{U} \times  \mathcal{T} \) denote the set of users, items, and edges, respectively. Regarding the CDR problem, we denote a source domain graph as \( {\mathcal{G}}^{s} = \left( {{\mathcal{U}}^{s},{\mathcal{T}}^{s},{\mathcal{E}}^{s}}\right) \) and a target domain graph as \( {\mathcal{G}}^{t} = \left( {{\mathcal{U}}^{t},{\mathcal{T}}^{t},{\mathcal{E}}^{t}}\right) \) . The number of nodes for the source and target domains is defined as \( {N}^{s} \) and \( {N}^{t} \) . As individuals, we use \( \left( {{u}_{i}^{s},{t}_{i}^{s}}\right) \) and \( \left( {{u}_{i}^{t},{t}_{i}^{t}}\right) \) to represent the \( i \) -th user and item pair in the source domain and target domain, respectively. The overlapped users form a non-empty set \( \mathcal{S} \) such that \( \mathcal{S} \subset  {\mathcal{U}}^{s} \) and \( \mathcal{S} \subset  {\mathcal{U}}^{t} \) . We use the same subscripts such as \( i \) if \( u \in  \mathcal{S} \) . Let \( {\mathbf{u}}_{i} \) and \( {\mathbf{t}}_{i} \) be the embeddings on the user and item, and \( \mathcal{N}\left( {u}_{i}\right) \) and \( \mathcal{N}\left( {t}_{i}\right) \) be the neighborhood of \( i \) -th user and item node, respectively.
+
+![2_182_236_1438_473_0.jpg](images/2_182_236_1438_473_0.jpg)
+
+Figure 2: The illustration of our proposed framework SCCDR and the example of the intra-CL and inter-CL losses we considered.
+
+### 3.1 Matching Stage in CDR
+
+The CDR approach for the matching task seeks to enhance the matching performance of the target domain by leveraging the information from the source domain. Following [54], our focus is on the matching module of the conventional two-stage recommender systems [14]. The matching module precedes the ranking module and aims to efficiently retrieve a subset of relevant items from a large-scale item pool. The matching module is more concerned with the presence of good items in the retrieved set (often evaluated by the hit rate metric (HIT@N)), rather than the exact order of the items, which is the responsibility of the subsequent ranking module (often assessed by NDCG or AUC) \( \left\lbrack  {{10},{33},{55}}\right\rbrack \) .
+
+### 3.2 Graph-based Contrastive Learning in CDR
+
+Graph-based contrastive learning (GCL) is a novel paradigm for recommender systems that leverages the power of graph neural networks (GNNs) \( \left\lbrack  {5 - 9,{17},{29},{45},{47},{51},{52},{57}}\right\rbrack \) and self-supervised learning \( \left\lbrack  {{25},{59},{60}}\right\rbrack \) . GCL aims to learn better user and item representations by maximizing the agreement between different views of the same graph while minimizing the similarity between views of different graphs [58]. GCL can effectively address the challenges of data sparsity, noise, and heterogeneity in recommender systems, and improve the performance of various downstream tasks.
+
+GCL in CDR usually consists of three main components: graph encoders for source domain \( {f}^{s} \) and target domain \( {f}^{t} \) , a view generator \( g \) , and a contrastive loss \( \mathcal{L} \) :
+
+- The graph encoder is a GNN model that takes a user-item interaction graph \( \left( \mathcal{G}\right) \) as input and outputs the embeddings of users \( \left( \mathbf{u}\right) \) and items \( \left( \mathbf{t}\right) \) :
+
+\[
+{\mathbf{u}}^{ * },{\mathbf{t}}^{ * } = {f}^{ * }\left( {{\mathcal{G}}^{ * };{\mathbf{W}}^{ * }}\right) \tag{1}
+\]
+
+where \( \mathbf{W} \) denotes network weights, and \( * \) indicates either the source or target domain. \( {f}^{s} \) and \( {f}^{t} \) can share parameters (i.e., employed with a single GNN) regarding model design and we choose to distinguish them with two GNNs that are of the same architecture in our framework. A general formula for updating user representation \( \mathbf{u} \) in GNNs is denoted as
+
+\[
+{\mathbf{u}}_{i}^{\left( l\right) } = \sigma \left( {{\mathbf{W}}^{\left( l\right) } \cdot  \left( {\operatorname{Aggr}\left( {{e}_{ij}^{\left( l\right) }{\mathbf{u}}_{j}^{\left( l\right) },{u}_{j} \in  \mathcal{N}\left( {u}_{i}\right) }\right)  + {B}^{\left( l\right) } \cdot  {\mathbf{u}}_{i}^{\left( l\right) }}\right) }\right) , \tag{2}
+\]
+
+where \( {\mathbf{u}}_{i}^{\left( l\right) } \) denotes the node representation for user \( {u}_{i} \) in the \( l \) -th hidden layer, \( {e}_{ij}^{\left( l\right) } \) is the correlation coefficient between node pair with index \( i \) and \( j,{B}^{\left( l\right) } \) represents the weights for the self-loop of \( i \) -th node, \( \operatorname{Aggr}\left( \cdot \right) \) is the function to aggregate neighborhood information, \( \operatorname{Comb}\left( \cdot \right) \) aims for combining self- and neighbor-information, and \( \sigma \left( \cdot \right) \) is the activation function. The layer-wise update rule for item embedding \( \mathbf{t} \) is the same as \( \mathbf{u} \) as in Eq. (2).
+
+- The view generator \( g \) for CDR creates different views of users and items from both the source domain and the target domain, such as by adding or removing edges, perturbing node features, or sampling subgraphs. For intra-CL, the views are generated deliberately for the source or target domain and focus on relationships within the single domain such as the neighborhood around the nodes. For inter-CL, the views are produced by considering cross-domain relationships and usually depend on the alignment of overlapped users.
+
+- The contrastive loss \( \mathcal{L} \) is a function that measures the similarity between embeddings of different views and encourages the embeddings of the same nodes to be closer than the rest of the nodes in the latent space. Representative contrastive losses are BCELoss [18], Triplet loss [42], and InfoNCE [38]. Among them, InfoNCE is the most widely adopted application in CDR.
+
+## 4 Proposed Method: SCCDR
+
+In this work, we propose SCCDR to enhance the cross-domain recommendation in matching via intra-CL and inter-CL separation, and curriculum scheduler in inter-CL alignment. We begin by introducing the general framework of SCCDR then dive into the details of each module design.
+
+### 4.1 Separated Intra-CL and Inter-CL Paradigm
+
+Recall the challenge we mentioned in Section 1, we can observe from Figure 1 that the naive mixture of the intra-CL and inter-CL tasks could result in unstable training and therefore infect the quality of user and item representations. This also coincides with our intuition that contrastive patterns within the same domain could be easier to capture than those in cross-domain. The reasons for this are twofold: 1) The proportion of overlapped users is always small compared with the rest of user and item nodes that belong to the same domain. The richer interaction within a single domain makes the representation learning easier from the data perspective. 2) The preference within the same domain is more homogeneous than cross-domain. For example, it is easier to suppose a person prefers classical music from his/her music playlist rather than his watched history of movies. As a result, the inter-CL knowledge transfer with the help of overlapped users is more difficult unless the contrastive patterns are well-learned in the intra-CL task for individual domains.
+
+Tackling this drawback of the mixture of intra-CL and inter-CL tasks, we propose to distinguish the intra-CL and inter-CL tasks individually. Specifically, we develop a dual-oriented contrastive framework SCCDR that is deliberately designed for the CDR task as in Figure 2. SCCDR explicitly divides the learning of the intra-CL and inter-CL tasks into two stages:
+
+- During the first intra-CL stage, intra-CL tasks from source and target domains are optimized individually to generate the representation of users \( \mathbf{u} \) and items \( \mathbf{t} \) for each domain.
+
+- In the second inter-CL stage, SCCDR switches to inter-CL tasks and focuses on the calibration of node embeddings in the target domain with the help of the fruitful source domain interaction.
+
+Stop-gradient. To further stabilize the knowledge transfer and protect the representation of the source domain, we further introduce a stop-gradient operation in the connection between the two stages inspired by the studies on non-contrastive self-supervised learning \( \left\lbrack  {3,{12}}\right\rbrack \) . These non-contrastive approaches utilize a stop-gradient operation to address a dimensional collapse issue that shrinks representations into a reduced-dimensional subspace. This helps to prevent the encoder from outputting the same representations for all inputs and from simplifying the embedding distribution.
+
+In analogy to them, we adapt stop-gradient during the inter-CL stage and attempt to mitigate the interdependency between user and item embedding distributions, as depicted in the inter-CL stage from Figure 2. The motivations are also from two perspectives: 1) We assume that the substantial relationships between users and items in the source domain are adequate for learning superior node representations. Therefore, the involvement of the target domain during inter-CL could bring additional noise and then hurt the embeddings from the source domain. Subsequently, this would hinder the learning for nodes in the target domain as well. Therefore, it is desirable to protect the source domain embeddings that are already adequately trained in the intra-CL domain. 2) Meanwhile, the stop-gradient operation is found to be able to break the interdependency between user and item embedding distributions for the recommendation task [37]. Simply combining inter-domain contrasts in a multi-task way leads to breaking the underlying semantic structure of the source domain embeddings. Therefore, including the stop-gradient operation helps to decrease the influence from the target domain by restricting the excessive gradient during knowledge transfer and alleviates the over-aligned source and target distributions. We empirically observe that stop-gradients for the source domain ensure individual embedding characteristics (i.e., uniformity), leading to a performance boost (please refer to the ablation study in Section 5.3).
+
+### 4.2 Dual-oriented GCL
+
+Motivated by the great successes of GNNs, we instantiate each module in the dual-oriented CDR contrastive framework with graph-based contrastive learning as the representative solution. Note that SCCDR can be easily extended to other contrastive learning approaches by properly designing the graph encoders and view generators. In the context of GCL, SCCDR considers each component of GCL in CDR as the following:
+
+Graph encoder. GCL can be combined with different GNN architectures by adopting different GNN models, such as GCN [28], GAT [44], GraphSAGE [20], JK-Net [56] or LightGCN [23]. For the \( i \) -th user \( {u}_{i} \) , we first sample a dynamic sub-neighbor set \( \widetilde{\mathcal{N}}\left( {u}_{i}\right) \) that is randomly generated from \( \mathcal{N}\left( {u}_{i}\right) \) for efficient batch training. The resulting subgraph is denoted as \( {\widetilde{\mathcal{G}}}^{s} = \left( {{\widetilde{\mathcal{U}}}^{s},{\widetilde{\mathcal{T}}}^{s},{\widetilde{\mathcal{E}}}^{s}}\right) \) for source domain and \( {\widetilde{\mathcal{G}}}^{t} = \left( {{\widetilde{\mathcal{U}}}^{t},{\widetilde{\mathcal{T}}}^{t},{\widetilde{\mathcal{E}}}^{t}}\right) \) for target domain. We use a user node as the example here and the notions also hold for item nodes. We also denote the formed batch as \( \mathcal{B} \) .
+
+For the sake of the efficiency of fast embedding-based retrieval in matching, the calculation of user-item interaction should not be complicated in recommendation tasks. Considering simplicity, we choose to use GraphSAGE [20] with JK-Net [56] as the same graph encoder on the sampled subgraphs \( {\widetilde{\mathcal{G}}}^{s} \) and \( {\widetilde{\mathcal{G}}}^{t} \) for both source and target domains, respectively:
+
+\[
+{\mathbf{u}}_{i}^{\left( l\right) } = \sigma \left( {{\mathbf{W}}^{\left( l\right) } \cdot  \left( {\operatorname{Aggr}\left( {{\mathbf{u}}_{j}^{\left( l\right) },{u}_{j} \in  \widetilde{\mathcal{N}}\left( {u}_{i}\right) }\right)  + {\mathbf{u}}_{i}^{\left( l\right) }}\right) }\right) , \tag{3}
+\]
+
+\[
+{\mathbf{u}}_{i} = \operatorname{Comb}\left( {{\mathbf{u}}_{i}^{\left( l\right) } : l \in  0,1,\ldots , L}\right) , \tag{4}
+\]
+
+where we set the learnable weights \( {B}^{\left( l\right) } \) and \( {e}_{ij} \) in the Aggr operation of Eq. (2) as constant in Eq. (3) to reduce the parameter complexity. The Comb step in Eq. (4) performs as a "skip connection" between different layers and usually does not involve additional parameters. Eq. (3) and Eq. (4) are similarly defined for items.
+
+We then conduct a two-layer GraphSAGE with JK-Net to generate the aggregated node representations \( \mathbf{u} \) and \( \mathbf{t} \) for all nodes from the source and target domains. It is worth noting that it is also straightforward to employ other simpler GNN models such as LightGCN [23] as the encoder as shown in Section 5.5.
+
+View generator. Similar to the recent simplicity-driven design on the graph contrastive learning for recommendation [59], we choose to directly utilize the graph encoders from source domain \( {f}^{s} \) and target domain \( {f}^{t} \) as the natural contrasts for view generator. In this way, we could ease the burden of additional computation for graph augmentation types of contrastive that are used in [54].
+
+After obtaining the view of users \( \left( {{\mathbf{u}}^{s},{\mathbf{u}}^{t}}\right) \) and items from \( \left( {{\mathbf{t}}^{s},{\mathbf{t}}^{t}}\right) \) for source and target domains, we employ the separated paradigm by firstly conducting intra-CL to learn the relations within each domain then performing inter-CL to transfer the knowledge from source domain to target domain. The specific design of intra-CL and inter-CL is motivated from [54], which could effectively tackle the challenge of data sparsity, popularity bias, and diversity of CDR in matching.
+
+Intra-CL loss. In the first intra-CL stage, we only consider the neighbor-similarity-based loss to fully learn the self-supervised information from the sparse user-item interaction. As in Figure 2, this intra-CL loss projects all nodes into a common latent space, where the nodes are similar to their neighbors. To further utilize all edges as unsupervised information to facilitate the training process, in addition to user-item interactions, we propose to use BCELoss [18] instead of the commonly used InfoNCE [38] to implement this neighbor-similarity based intra-CL loss. In this way, the true label is the link (1 for existing, 0 for non-existing) between a node pair. Therefore, given a node \( {v}_{i}^{s} \) ( \( {v}^{s} \) could be either a user \( {u}^{s} \) or an item \( {t}^{s} \) ) in the source domain, the intra-CL loss is formulated as follows:
+
+\[
+{\mathcal{L}}_{{\text{ intra }}_{\mathrm{s}}}\left( {v}^{s}\right)  =  - \mathop{\sum }\limits_{{v}_{i}^{s}}\mathop{\sum }\limits_{{{v}_{j}^{s} \in  \mathcal{N}\left( {v}_{i}^{s}\right) }}\mathop{\sum }\limits_{{{v}_{k}^{s} \notin  \mathcal{N}\left( {v}_{i}^{s}\right) }}\left( {\log \left( {\sigma \left( {{v}_{i}^{s\top }{v}_{j}^{s}}\right) }\right) }\right.
+\]
+
+\[
+\left. {+\log \left( {1 - \sigma \left( {{\mathbf{v}}_{i}^{s\top }{\mathbf{v}}_{k}^{s}}\right) }\right) }\right) \text{ , } \tag{5}
+\]
+
+Table 1: Statistics of the Amazon and proprietary industrial datasets. We choose 7 domains from Amazon datasets and 2 domains from our collected proprietary industrial dataset to validate the generalization ability of SCCDR.
+
+<table><tr><td></td><td>Books-Videos</td><td>Books-Music</td><td>Books-Elec</td><td>Books-Toys</td><td>Videos-Music</td><td>Cloth-Music</td><td>Kitchen-Music</td><td>Elec-Cloth</td><td>Industrial: Music2Videos</td></tr><tr><td>users</td><td>344,000</td><td>6,4920</td><td>380,874</td><td>243,265</td><td>51,534</td><td>4,286</td><td>8,144</td><td>142,834</td><td>7,388,137</td></tr><tr><td>source item</td><td>222,244</td><td>119,694</td><td>220,020</td><td>205,081</td><td>33,052</td><td>8,212</td><td>22,550</td><td>44,837</td><td>50,006</td></tr><tr><td>target item</td><td>31,086</td><td>694</td><td>39,171</td><td>8,848</td><td>1,466</td><td>712</td><td>36,018</td><td>21,299</td><td>94,207</td></tr><tr><td>source edges</td><td>1,826,791</td><td>643,112</td><td>1,809,283</td><td>1,619,884</td><td>287,218</td><td>15,123</td><td>6,670</td><td>470,057</td><td>15,313,658</td></tr><tr><td>target edges</td><td>229,147</td><td>1,251</td><td>334,807</td><td>44,484</td><td>3,397</td><td>1,013</td><td>60,358</td><td>123,890</td><td>7,030,889</td></tr></table>
+
+where \( {v}_{j}^{s} \in  \mathcal{N}\left( {v}_{i}^{s}\right) \) is a sampled neighbor of \( {v}_{i}^{s} \cdot  {v}_{k}^{s} \notin  \mathcal{N}\left( {v}_{i}^{s}\right) \) is a randomly selected negative sample of \( {v}_{i}^{s}\left( {v}_{i}^{s}\right. \) and \( {v}_{k}^{s} \) are not connected).
+
+Similarly, the intra-CL loss for a node \( {v}_{i}^{t} \) in the target domain is:
+
+\[
+{\mathcal{L}}_{{\text{ intra }}_{t}}\left( {v}^{t}\right)  =  - \mathop{\sum }\limits_{{v}_{i}^{t}}\mathop{\sum }\limits_{{{v}_{j}^{t} \in  \mathcal{N}\left( {v}_{i}^{t}\right) }}\mathop{\sum }\limits_{{{v}_{k}^{t} \notin  \mathcal{N}\left( {v}_{i}^{t}\right) }}\left( {\log \left( {\sigma \left( {{v}_{i}^{t\top }{v}_{j}^{t}}\right) }\right) }\right.
+\]
+
+\[
+\left. {+\log \left( {1 - \sigma \left( {{\mathbf{v}}_{i}^{t\top }{\mathbf{v}}_{k}^{t}}\right) }\right) }\right) \text{ . } \tag{6}
+\]
+
+While InfoNCE is a more popular form of contrastive loss, the InfoNCE [38] originates from BCELoss [18] and BCELoss has been used to achieve contrastive learning especially for single domain graph learning \( \left\lbrack  {4,{41},{50},{63}}\right\rbrack \) . Using BCELoss also brings additional benefits for reducing the computational cost.
+
+Inter-CL loss. In the second inter-CL stage, we employ two types of contrastive losses: aligned user-based inter-CL and neighbor-similarity-based inter-CL as shown in Figure 2.
+
+Aligned user based inter-CL: The majority of existing CDR methods [35] adopt aligned users as their predominant mapping seeds across domains. We adhere to this idea and perform an aligned user-based inter-CL task. Each aligned user \( {u}_{i} \) possesses two user representations \( {\mathbf{u}}_{i}^{s} \) and \( {\mathbf{u}}_{i}^{t} \) in the source and target domains, which are learned by two graph encoders during the intra-CL stage. Even though users may exhibit diverse preferences and behavior patterns in two domains, it is reasonable to assume that the source-domain representation \( {\mathbf{u}}_{i}^{s} \) should be more similar to its target-domain counterpart \( {\mathbf{u}}_{i}^{t} \) than any other representations \( {\mathbf{v}}_{j}^{t} \) .
+
+We define the user-based inter-CL loss \( {L}_{\text{ inter }} \) by the InfoNCE [38] loss as follows:
+
+\[
+{\mathcal{L}}_{{\text{ inter }}_{\mathrm{u}}}\left( {{\mathbf{u}}^{s},{\mathbf{v}}^{t}}\right)  =  - \mathop{\sum }\limits_{{u}_{i}}\log \frac{\exp \left( {\operatorname{sim}\left( {{\mathbf{u}}_{i}^{s},{\mathbf{u}}_{i}^{t}}\right) /\tau }\right) }{\mathop{\sum }\limits_{{{v}_{i}^{t} \in  {\mathcal{S}}_{{u}_{i}}^{t}}}\exp \left( {\operatorname{sim}\left( {{\mathbf{u}}_{i}^{s},{v}_{i}^{t}}\right) /\tau }\right) }, \tag{7}
+\]
+
+where \( \tau \) is the temperature. \( {\mathcal{S}}_{{u}_{i}}^{t} \) is the sampled negative set collected from all other users/items in the target domain except \( {u}_{i} \) . The function \( \operatorname{sim}\left( {\cdot , \cdot  }\right) \) measures the similarity between a pair of embeddings, which is calculated with their cosine similarity. Note that we do not use all examples in \( {\mathcal{S}}_{{u}_{i}}^{t} \) as negative samples for efficiency.
+
+Neighbor-similarity based inter-CL: In addition to the explicit alignments of users across domains, some indirect relations lack explicit mapping. Our goal here is to introduce more implicit cross-domain knowledge transfer paths between unaligned nodes in two domains. Following [54], we hypothesize that similar nodes in different domains should have similar neighbors (e.g., similar items may have similar users). Therefore, we adopt a neighbor-based inter-CL, which establishes indirect (multi-hop) connections between objects in different domains. The neighbor-based inter-CL loss \( {L}_{{\text{ inter }}_{\mathrm{n}}} \) is then formulated with the aligned users \( {u}_{i} \) and \( {u}_{i} \) ’s neighbor set \( {\mathcal{N}}^{t}\left( {u}_{i}\right) \) in the target domain as follows:
+
+\[
+{\mathcal{L}}_{{\text{ inter }}_{\mathrm{n}}}\left( {{\mathbf{u}}^{s},{\mathbf{v}}^{t}}\right)  =  - \mathop{\sum }\limits_{{u}_{i}}\mathop{\sum }\limits_{{{v}_{i}^{t} \in  {\mathcal{N}}^{t}\left( {u}_{i}\right) }}\log \frac{\exp \left( {\operatorname{sim}\left( {{\mathbf{u}}_{i}^{s},{\mathbf{v}}_{i}^{t}}\right) /\tau }\right) }{\mathop{\sum }\limits_{{{v}_{j}^{t} \notin  {\mathcal{N}}^{t}\left( {u}_{i}\right) }}\exp \left( {\operatorname{sim}\left( {{\mathbf{u}}_{i}^{s},{\mathbf{v}}_{j}^{t}}\right) /\tau }\right) }.
+\]
+
+(8)
+
+In \( {\mathcal{L}}_{{\text{ inter }}_{\mathrm{n}}} \) , the neighbor’s representation \( {\mathbf{v}}_{i}^{t} \) in the target domain of an aligned user’s representation \( {\mathbf{u}}_{i}^{s} \) in the source domain is the positive instance, while other target-domain representations \( {\mathbf{v}}_{j}^{t} \) are negative. This is justified by the assumption that related objects are connected and similar within a user-item graph, as enforced by the neighbor-similarity-based intra-CL loss in Eq. (5) and Eq. (6). The current positive samples \( {v}_{i}^{t} \in  {\mathcal{N}}^{t}\left( {u}_{i}\right) \) can be extended to the neighbors from a multi-hop \( r \) -ego graph for improved generalization and diversity in CDR. The neighbor-similarity-based inter-CL also increases the diversified knowledge transfer paths between two domains, especially for the cold-start items.
+
+### 4.3 Curriculum Scheduler in Inter-CL
+
+Considering the negative samples play an important role in the optimization of the inter-CL stage, we propose using a curriculum scheduler \( \left\lbrack  {1,2,{13},{48},{49}}\right\rbrack \) to utilize these negative samples effectively. We design an easy-to-hard curriculum training strategy to alleviate the impact of the potential noise hidden in the negative samples.
+
+Difficulty measurer. In order to reflect the difficulty of the negative samples for GCL, we propose to use graph complexity formalisms as difficulty criteria. Inspired by [43], we choose Katz centrality \( \left\lbrack  {{27},{36}}\right\rbrack \) as the criterion of the difficulty measurer, since GNNs are trained through neural message passing in sampled subgraphs \( {\widetilde{\mathcal{G}}}^{s} \) and \( {\widetilde{\mathcal{G}}}^{t} \) for both the source and the target domains.
+
+Specifically, the centrality of a node is determined by the centrality of its neighbors. Katz centrality quantifies the relative influence of a node within a network by counting the number of immediate neighbors and the number of walks between node pairs. The formula for the Katz centrality is as follows:
+
+\[
+{x}_{i} = \alpha \mathop{\sum }\limits_{j}{A}_{ij}{x}_{j} + \beta \tag{9}
+\]
+
+Table 2: Results of matching-related metrics on top-four Amazon datasets. All improvements of SCCDR over baselines are significant (t-test with \( p < {0.05} \) ) and marked as bold.
+
+<table><tr><td rowspan="2">Model</td><td colspan="2">Books-Videos</td><td colspan="2">Books-Music</td><td colspan="2">Books-Elec</td><td colspan="2">Books-Toys</td></tr><tr><td>HIT@50</td><td>HIT@100</td><td>HIT@50</td><td>HIT@100</td><td>HIT@50</td><td>HIT@100</td><td>HIT@50</td><td>HIT@100</td></tr><tr><td>MV-DNN (Elkahky et al. 2015)</td><td>0.1310</td><td>0.1848</td><td>0.1895</td><td>0.2074</td><td>0.0664</td><td>0.0958</td><td>0.0839</td><td>0.1487</td></tr><tr><td>EMCDR (Man et al. 2017)</td><td>0.1310</td><td>0.1880</td><td>0.1632</td><td>0.2211</td><td>0.0646</td><td>0.0968</td><td>0.0911</td><td>0.1511</td></tr><tr><td>DTCDR (Zhu et al. 2019)</td><td>0.0929</td><td>0.1648</td><td>0.1105</td><td>0.2124</td><td>0.0448</td><td>0.0682</td><td>0.0312</td><td>0.0767</td></tr><tr><td>HeroGraph (Cui et al. 2020)</td><td>0.1406</td><td>0.2068</td><td>0.1227</td><td>0.2301</td><td>0.0643</td><td>0.0948</td><td>0.1062</td><td>0.1557</td></tr><tr><td>GraphDR+ (Xie et al. 2021)</td><td>0.1563</td><td>0.2431</td><td>0.1105</td><td>0.2421</td><td>0.0651</td><td>0.1245</td><td>0.1264</td><td>0.1828</td></tr><tr><td>CCDR (Xie et al. 2022)</td><td>0.1588</td><td>0.2545</td><td>0.1368</td><td>0.2737</td><td>0.0541</td><td>0.1048</td><td>0.1407</td><td>0.2350</td></tr><tr><td>COAST (Zhao et al. 2023b)</td><td>0.1475</td><td>0.2136</td><td>0.1265</td><td>0.2423</td><td>0.0683</td><td>0.1174</td><td>0.1117</td><td>0.1924</td></tr><tr><td>SCCDR (ours)</td><td>0.1616</td><td>0.2613</td><td>0.1435</td><td>0.2847</td><td>0.0779</td><td>0.1238</td><td>0.1583</td><td>0.2490</td></tr></table>
+
+Table 3: Results of matching-related metrics on bottom-four Amazon datasets. All improvements of SCCDR are significant (t-test with \( p < {0.05} \) ) and marked as bold.
+
+<table><tr><td rowspan="2">Model</td><td colspan="2">Videos-Music</td><td colspan="2">Cloth-Music</td><td colspan="2">Kitchen-Music</td><td colspan="2">Elec-Cloth</td></tr><tr><td>HIT@50</td><td>HIT@100</td><td>HIT@50</td><td>HIT@100</td><td>HIT@50</td><td>HIT@100</td><td>HIT@50</td><td>HIT@100</td></tr><tr><td>MV-DNN (Elkahky et al. 2015)</td><td>0.1205</td><td>0.1854</td><td>0.0867</td><td>0.1367</td><td>0.1123</td><td>0.1452</td><td>0.0170</td><td>0.0291</td></tr><tr><td>EMCDR (Man et al. 2017)</td><td>0.1250</td><td>0.1786</td><td>0.1083</td><td>0.1550</td><td>0.1193</td><td>0.1432</td><td>0.0180</td><td>0.0313</td></tr><tr><td>DTCDR (Zhu et al. 2019)</td><td>0.0536</td><td>0.0804</td><td>0.1350</td><td>0.1617</td><td>0.1250</td><td>0.1484</td><td>0.0115</td><td>0.0201</td></tr><tr><td>HeroGraph (Cui et al. 2020)</td><td>0.1182</td><td>0.1562</td><td>0.1567</td><td>0.1867</td><td>0.1477</td><td>0.1677</td><td>0.0088</td><td>0.0135</td></tr><tr><td>GraphDR+ (Xie et al. 2021)</td><td>0.0759</td><td>0.1429</td><td>0.1533</td><td>0.1893</td><td>0.1494</td><td>0.1719</td><td>0.0198</td><td>0.0284</td></tr><tr><td>CCDR (Xie et al. 2022)</td><td>0.1356</td><td>0.1843</td><td>0.1660</td><td>0.2017</td><td>0.1538</td><td>0.1867</td><td>0.0220</td><td>0.0335</td></tr><tr><td>COAST (Zhao et al. 2023b)</td><td>0.1322</td><td>0.1792</td><td>0.1638</td><td>0.2075</td><td>0.1476</td><td>0.1786</td><td>0.0235</td><td>0.0379</td></tr><tr><td>SCCDR (ours)</td><td>0.1484</td><td>0.1998</td><td>0.1750</td><td>0.2160</td><td>0.1619</td><td>0.1968</td><td>0.0298</td><td>0.0515</td></tr></table>
+
+where \( \mathbf{A} \) is the adjacency matrix and \( {\mathbf{A}}_{ij} = 1 \) if \( i \) and \( j \) is connected. \( {x}_{i} \) is the Katz centrality of node \( i,\alpha \) is the attenuation factor, and \( \beta \) controls the initial centrality.
+
+Suppose that we first sample \( {N}_{\text{ neg }} \) negative samples for each node \( {u}_{i} \) , for a positive-negative sample pair \( \left( {{u}_{i},{v}_{j}}\right) \) , we measure the difficulty as the sum of Katz centrality of them \( {d}_{{u}_{i},{v}_{j}} = {d}_{{u}_{i}} + {x}_{{v}_{j}} \) . Then we reorder all \( {v}_{j} \) in the negative sample set \( {\mathcal{S}}_{{u}_{i}} \) in descending order with respect to the difficulty score, which indicates that the higher Katz centrality corresponds to lower difficulty scores. This aligns with the intuition that the patterns of short-head items in the long-tail distribution can be more easily captured. Note that the Katz centrality score for all nodes is pre-computed, therefore this process adds no additional computational complexity for CDR. Curriculum scheduler. With the ordered difficulty score for each pair of positive-negative samples, we can schedule the training of inter-CL in a curriculum manner. For training inter-CL stage for \( {N}_{\text{ epoch }} \) epochs, we first extract the top \( {50}\% \) easiest negative samples to form the negative set, i.e., \( {v}_{i}^{t} \in  {\mathcal{S}}_{{u}_{i}}^{t} \) in Eq. (7) and \( {v}_{j}^{t} \notin  {\mathcal{N}}^{t}\left( {u}_{i}\right) \) in Eq. (8), to optimize the model. Then for \( {N}_{\text{ step }} \) steps, we gradually select one negative sample with higher difficulty and include it into the negative set for curriculum contrasts. \( {N}_{\text{ step }} \) is defined as:
+
+\[
+{N}_{\text{ step }} = \frac{{N}_{\text{ epoch }}}{{N}_{\text{ neg }}/2}. \tag{10}
+\]
+
+Although we choose this relatively static version of the implementation of the curriculum scheduler, it is worth mentioning that there are also other alternatives to achieving the curriculum scheduler, which we leave for future work.
+
+### 4.4 Multi-task Optimization
+
+Following other CDR models [54], we also conduct a multi-task optimization approach that combines the neighbor-similarity based intra-CL losses \( {\mathcal{L}}_{{\text{ intra }}_{\mathrm{s}}} \) and \( {\mathcal{L}}_{{\text{ intra }}_{\mathrm{t}}} \) , the aligned user based inter-CL loss \( {\mathcal{L}}_{{\text{ inter }}_{\mathrm{u}}} \) , and the neighbor-similarity based inter-CL loss \( {\mathcal{L}}_{{\text{ inter }}_{\mathrm{n}}} \) as follows:
+
+\[
+\text{ Intra-CL Stage : }{\mathcal{L}}_{\text{ intra }} = {\lambda }_{\text{ intra }}\left( {{\mathcal{L}}_{{\text{ intra }}_{s}}\left( {\mathbf{v}}^{s}\right)  + {\mathcal{L}}_{{\text{ intra }}_{t}}\left( {\mathbf{v}}^{t}\right) }\right) \text{ , } \tag{11}
+\]
+
+\[
+\text{ Inter-CL Stage : }{\mathcal{L}}_{\text{ inter }} = {\lambda }_{\text{ inter }}\left( {{\mathcal{L}}_{\text{ inter u }}\left( \right. }\right. \text{ stopgrad }\left( {\mathbf{u}}^{s}\right) ,{\mathbf{v}}^{t})
+\]
+
+\[
+\left. {+{\mathcal{L}}_{{\text{ inter }}_{\mathrm{n}}}\left( {\operatorname{stopgrad}\left( {\mathbf{u}}^{s}\right) ,{\mathbf{v}}^{t}}\right) }\right) , \tag{12}
+\]
+
+where \( {\lambda }_{\text{ intra }} \) and \( {\lambda }_{\text{ inter }} \) are loss weights for intra-loss and inter-loss, respectively. \( {\lambda }_{\text{ intra }} \) and \( {\lambda }_{\text{ inter }} \) are shared between the source and the target domains and we did a grid search to set \( {\lambda }_{\text{ intra }} \) as 1.0 and \( {\lambda }_{\text{ inter }} \) as 0.5 across all datasets.
+
+Table 4: Results of matching-related metrics on our Industrial: Music2Videos dataset. All improvements of SCCDR are significant (t-test with \( p < {0.05} \) ) and marked as bold.
+
+<table><tr><td>Industrial: Music2Videos</td><td>HIT@10</td><td>HIT@20</td><td>HIT@50</td><td>HIT@100</td></tr><tr><td>MV-DNN</td><td>0.0109</td><td>0.0143</td><td>0.0262</td><td>0.0266</td></tr><tr><td>EMCDR</td><td>0.0308</td><td>0.0519</td><td>0.0433</td><td>0.0706</td></tr><tr><td>DTCDR</td><td>0.0180</td><td>0.0247</td><td>0.0335</td><td>0.0366</td></tr><tr><td>HeroGraph</td><td>0.0319</td><td>0.0602</td><td>0.0986</td><td>0.1374</td></tr><tr><td>GraphDR+</td><td>0.0351</td><td>0.0567</td><td>0.1012</td><td>0.1418</td></tr><tr><td>CCDR</td><td>0.0819</td><td>0.1080</td><td>0.1489</td><td>0.1791</td></tr><tr><td>COAST</td><td>0.0712</td><td>0.0946</td><td>0.1213</td><td>0.1582</td></tr><tr><td>SCCDR (ours)</td><td>0.0852</td><td>0.1146</td><td>0.1547</td><td>0.1836</td></tr></table>
+
+![6_159_777_699_259_0.jpg](images/6_159_777_699_259_0.jpg)
+
+Figure 3: Sensitivity analysis on the loss weights \( {\lambda }_{\text{ intra }} \) and \( {\lambda }_{\text{ inter }} \) on Elec-Cloth dataset regarding both HIT@100 and AUC metrics.
+
+## 5 Experiments
+
+In this section, we evaluate SCCDR on various real-world datasets and provide the ablations to demonstrate its effectiveness. Due to the page limits, the implementation details of our SCCDR, the evaluation metric, and a description of the competing methods can be referred to in the Appendix.
+
+### 5.1 Experimental Setup
+
+Amazon datasets. We mainly use the Amazon datasets [22], which contain users' behaviors in different domains. We choose 7 domains from the Amazon datasets, which are Books, Movies&TV (Videos), Digital Music (Music), Cloth, Electronics (Elec), Home&Kitchen (Kitchen), and Toys, to create 8 source-target cross-domain scenarios, such as Books-Videos and Elec-Cloth. These scenarios cover both highly-correlated and less-correlated domains. We filter the behaviors of the source and target domains by the common users between domains. Table 1 shows the detailed statistics of the filtered Amazon datasets \( {}^{1} \) .
+
+The target domain behavior numbers vary across different scenarios, for example, Books-Videos has 229,147 and Cloth-Music has 2,724 . We follow the same dataset split for the target domain as \( \left\lbrack  {{10},{24},{39}}\right\rbrack \) , where the test set consists of the last behavior of each user, the validation set consists of the second to last behavior, and the training set consists of the rest behaviors. The feature for each user is its ID, and the features for each item are its ID and category.
+
+Proprietary industrial datasets. To align the evaluation closer to real scenarios, we collect a new CDR dataset named Industrial: Music2Videos extracted from a real-world recommender system operated in proprietary Music and Video apps. We treat Music as the source domain and use its informative knowledge to help make recommendations for the target Video domain. All data are pre-processed via data masking to protect the user's privacy. The users and their behaviors are randomly selected within a week and the detailed statistics can also be found in Table 1. We split these behaviors into the training/validation/test sets similar to the strategy for Amazon datasets.
+
+### 5.2 Overall Performance Comparison
+
+The overall recommendation performance in the task of matching in CDR of different models on Amazon datasets is presented in Table 2, Table 3, and Table 4. We can have the following observations:
+
+- Graph-based matching method tends to have better performance than classical matching method. This is attributed to the representation power of GNNs in structure learning, which effectively captures sparse interactions in the user-item graphs. Meanwhile, even the graph encoders are not implemented with fancy complicated GNN backbones, they have already achieved significant improvement by learning heterogeneous node em-beddings are in the same semantic space,
+
+- Our proposed SCCDR brings consistent improvements over baselines. Whether on open-source Amazon datasets or our proprietary industrial datasets, SCCDR brings further improvement over either classical or graph-based matching methods. In particular, our SCCDR achieves more than 2% HIT@100 improvement over CCDR by sacrificing the additional graph augmentation intra-loss on more than half (Books-Music, Books-Elec, Books-Toys, Videos-Music, Cloth-Music, Kitchen-Cloth, and Industrial: Music2Videos) of the settings.
+
+- SCCDR exhibits greater potential in dealing with less irrelevant source-target transfer and cold-start scenarios. SCCDR obtains about \( {0.1}\% \) HIT@100 improvement in the Books-Videos scenario, where the source and target domains are quite similar, resulting in small differences in the optimal weights for different behaviors. However, our method shows more significant improvement in the Books-Elec scenario, where only specific book categories have an intuitive influence on electronic recommendation. Moreover, our method shows consistently larger HIT@100 enhancement (more than 2% HIT@100) in the Books-Music, Videos-Music, Cloth-Music, Kitchen-Cloth, and Industrial: Music2Videos settings, where the target behaviors are much scarcer than the source domain, indicating the ability of our method to address the cold-start problem.
+
+### 5.3 Ablation Study
+
+To further examine the effectiveness of the two main designs of SCCDR, we compare SCCDR with its two ablation versions. We first remove the curriculum scheduler from SCCDR to construct an ablation version SCCDR #, then consecutively remove the stop-gradient operation to build another ablation version SCCDR ##. As shown in Table 5, we can observe that: 1) The curriculum scheduler that measures the difficulty of negative samples could enhance the performance of SCCDR by persisting the potential noise in the graph structure. 2) The stop-gradient operation could contribute even more to the performance improvement since it effectively helps amplify the influence from the source domain by restricting the excessive gradient.
+
+---
+
+\( {}^{1} \) http://snap.stanford.edu/data/amazon
+
+---
+
+Table 5: Ablation study on the effectiveness of each module in SCCDR on top-four Amazon datasets.
+
+<table><tr><td rowspan="2">Model</td><td colspan="2">Books-Videos</td><td colspan="2">Books-Music</td><td colspan="2">Books-Elec</td><td colspan="2">Books-Toys</td></tr><tr><td>HIT@50</td><td>HIT@100</td><td>HIT@50</td><td>HIT@100</td><td>HIT@50</td><td>HIT@100</td><td>HIT@50</td><td>HIT@100</td></tr><tr><td>SCCDR ##</td><td>0.1482</td><td>0.2271</td><td>0.1199</td><td>0.2127</td><td>0.0598</td><td>0.1088</td><td>0.1274</td><td>0.1828</td></tr><tr><td>SCCDR #</td><td>0.1570</td><td>0.2498</td><td>0.1393</td><td>0.2601</td><td>0.0663</td><td>0.1190</td><td>0.1397</td><td>0.2350</td></tr><tr><td>SCCDR (ours)</td><td>0.1616</td><td>0.2613</td><td>0.1435</td><td>0.2847</td><td>0.0779</td><td>0.1238</td><td>0.1583</td><td>0.2490</td></tr></table>
+
+Given both intra-CL and inter-CL have already been verified essential for the matching in CDR from CCDR [54], we choose to skip this ablation study to avoid redundancy.
+
+### 5.4 Sensitivity Analysis of Loss Weights
+
+Here we investigate the impact of two main hyperparameters, loss weights \( {\lambda }_{\text{ intra }} \) and \( {\lambda }_{\text{ inter }} \) , on the performance (both HIT@100 and AUC metrics) regarding the Elec-Cloth dataset. The results are shown in Figure 3. We can find that: 1) The SCCDR performance is relatively sensitive to small loss weights \( {\lambda }_{\text{ intra }} \) and \( {\lambda }_{\text{ inter }};2 \) ) Generally, the performance of SCCDR is robust to loss weights, corresponding to the relatively flat surface resulting from the larger \( {\lambda }_{\text{ intra }} \) and \( {\lambda }_{\text{ inter }};3 \) ) SCCDR shows similar trends for both HIT@100 and AUC metrics, which indicates that the performance of our model is robust to the choice of evaluation metrics. This sensitivity analysis of loss weights suggests that the users should set both \( {\lambda }_{\text{ intra }} \) and \( {\lambda }_{\text{ inter }} \) slightly larger during practice.
+
+### 5.5 Comparison of GNN Architectures
+
+We also explore how the choice of different GNN architectures as the graph encoder of SCCDR could influence the matching performance and report the results in Figure 4. Four popular GNNs are selected for evaluation, i.e., GAT [44], GCN [28], LightGCN [23], and GraphSAGE [20]. To ensure a fair comparison, we set the number of layers as 2 , the embedding dimension as 128 , and employ JK-Net [56] with concatenation as Comb accordingly for all methods. We can find that GAT and GraphSAGE achieve better HIT@100 for both datasets than GCN and LightGCN, which might be because the sampling strategy during training makes the average neighborhood aggregation in GCN and LightGCN weak for our task. We can also see that the performance of SCCDR does not significantly rely on any specific choice of the GNN architecture. Considering the higher computational complexity and the larger amount of parameters of GAT, we choose to use GraphSAGE as the graph encoder of SCCDR across all datasets in experiments.
+
+### 5.6 Online Evaluation
+
+To further verify the effectiveness of SCCDR in real-world scenarios, we conduct an online A/B test on our online recommender system within the Video App. The online baseline is GraphDR+ (target) which is trained solely on the target domain. We implement two baselines: GraphDR+ (source + target) and CCDR with the help of the source Music domain, and compare them with SCCDR. We conduct an A/B test for 7 days. We focus on two online metrics in the target Video domain: i) CTR and ii) average user duration per capita (Duration). The results are reported in Table 6. We can find that all improvements of our SCCDR over baselines regarding two online metrics are significant (t-test with \( p < {0.05} \) ), which further indicates the effectiveness of SCCDR via online deployment.
+
+![7_924_517_710_307_0.jpg](images/7_924_517_710_307_0.jpg)
+
+Figure 4: Performance comparison of different GNN architectures (GAT, GCN, LightGCN, and GraphSAGE). HIT@100 is reported as the evaluation metric here.
+
+Table 6: Online A/B test results.
+
+<table><tr><td>Model</td><td>CTR</td><td>Duration</td></tr><tr><td>GraphDR+ (source + target)</td><td>+0.76%</td><td>+1.54%</td></tr><tr><td>CCDR</td><td>+1.18%</td><td>+2.14%</td></tr><tr><td>SCCDR (ours)</td><td>+1.92%</td><td>+3.65%</td></tr></table>
+
+## 6 Conclusion
+
+In this paper, we present a novel approach to cross-domain recommendation (CDR) that tackles the inherent challenges of applying contrastive learning methods across intra- and inter-domain tasks. Our curriculum scheduling framework (SCCDR) explicitly separates the intra-domain contrastive learning (intra-CL) and inter-domain contrastive learning (inter-CL) tasks. We then apply an inter-domain curriculum scheduler to handle the complexity of cross-domain interactions. This approach stabilizes the training process and improves the quality of the user/item embeddings, resulting in better recommendation performance. Both the offline experiments and an online A/B test validate the effectiveness of SCCDR over a series of baselines, showing its state-of-the-art performance in CDR matching tasks. Our work highlights the importance of a nuanced approach to contrastive learning in cross-domain settings and opens up new avenues for further improving and optimizing CDR systems with curriculum learning strategies.
+
+## References
+
+[1] Yoshua Bengio, Jérôme Louradour, Ronan Collobert, and Jason Weston. 2009. Curriculum learning. In Proceedings of the 26th annual international conference on machine learning. 41-48.
+
+[2] Shuqing Bian, Wayne Xin Zhao, Kun Zhou, Jing Cai, Yancheng He, Cunx-iang Yin, and Ji-Rong Wen. 2021. Contrastive curriculum learning for sequential user behavior modeling via data augmentation. In Proceedings of the 30th ACM International Conference on Information & Knowledge Management. 3737-3746.
+
+[3] Mathilde Caron, Hugo Touvron, Ishan Misra, Hervé Jégou, Julien Mairal, Piotr Bojanowski, and Armand Joulin. 2021. Emerging properties in self-supervised vision transformers. In Proceedings of the IEEE/CVF international conference on computer vision. 9650-9660.
+
+[4] Heng Chang, Jie Cai, and Jia Li. 2023. Knowledge Graph Completion with Counterfactual Augmentation. In Proceedings of the ACM Web Conference 2023. 2611-2620.
+
+[5] Heng Chang, Yu Rong, Tingyang Xu, Yatao Bian, Shiji Zhou, Xin Wang, Junzhou Huang, and Wenwu Zhu. 2021. Not All Low-Pass Filters are Robust in Graph Convolutional Networks. Advances in Neural Information Processing Systems (NeurIPS) 34 (2021).
+
+[6] Heng Chang, Yu Rong, Tingyang Xu, Wenbing Huang, Somayeh Sojoudi, Junzhou Huang, and Wenwu Zhu. 2021. Spectral graph attention network with fast eigen-approximation. In Proceedings of the 30th ACM International Conference on Information & Knowledge Management (CIKM). 2905-2909.
+
+[7] Heng Chang, Yu Rong, Tingyang Xu, Wenbing Huang, Honglei Zhang, Peng Cui, Xin Wang, Wenwu Zhu, and Junzhou Huang. 2022. Adversarial Attack Framework on Graph Embedding Models with Limited Knowledge. IEEE Transactions on Knowledge and Data Engineering (TKDE) (2022).
+
+[8] Heng Chang, Yu Rong, Tingyang Xu, Wenbing Huang, Honglei Zhang, Peng Cui, Wenwu Zhu, and Junzhou Huang. 2020. A restricted black-box adversarial framework towards attacking graph embedding models. In Proceedings of the AAAI conference on Artificial Intelligence (AAAI), Vol. 34. 3389-3396.
+
+[9] Heng Chang, Jiangnan Ye, Alejo Lopez-Avila, Jinhua Du, and Jia Li. 2024. Path-based explanation for knowledge graph completion. In Proceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining. 231-242.
+
+[10] Hong Chen, Xin Wang, Ruobing Xie, Yuwei Zhou, and Wenwu Zhu. 2023. Cross-domain Recommendation with Behavioral Importance Perception. In Proceedings of the ACM Web Conference 2023. 1294-1304.
+
+[11] Ting Chen, Simon Kornblith, Mohammad Norouzi, and Geoffrey Hinton. 2020. A simple framework for contrastive learning of visual representations. In International conference on machine learning. PMLR, 1597-1607.
+
+[12] Xinlei Chen and Kaiming He. 2021. Exploring simple siamese representation learning. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. 15750-15758.
+
+[13] Yudong Chen, Xin Wang, Miao Fan, Jizhou Huang, Shengwen Yang, and Wenwu Zhu. 2021. Curriculum meta-learning for next POI recommendation. In Proceedings of the 27th ACM SIGKDD Conference on Knowledge Discovery & Data Mining. 2692-2702.
+
+[14] Paul Covington, Jay Adams, and Emre Sargin. 2016. Deep neural networks for youtube recommendations. In Proceedings of the 10th ACM conference on recommender systems. 191-198.
+
+[15] Qiang Cui, Tao Wei, Yafeng Zhang, and Qing Zhang. 2020. HeroGRAPH: A Heterogeneous Graph Framework for Multi-Target Cross-Domain Recommendation.. In ORSUM@ RecSys.
+
+[16] Ali Mamdouh Elkahky, Yang Song, and Xiaodong He. 2015. A multi-view deep learning approach for cross domain user modeling in recommendation systems. In Proceedings of the 24th international conference on world wide web. 278-288.
+
+[17] Fangda Gu, Heng Chang, Wenwu Zhu, Somayeh Sojoudi, and Laurent El Ghaoui. 2020. Implicit graph neural networks. Advances in Neural Information Processing Systems (NeurIPS) 33 (2020), 11984-11995.
+
+[18] Michael Gutmann and Aapo Hyvärinen. 2010. Noise-contrastive estimation: A new estimation principle for unnormalized statistical models. In Proceedings of the thirteenth international conference on artificial intelligence and statistics. JMLR Workshop and Conference Proceedings, 297-304.
+
+[19] Aric Hagberg, Pieter Swart, and Daniel S Chult. 2008. Exploring network structure, dynamics, and function using NetworkX. Technical Report. Los Alamos National Lab.(LANL), Los Alamos, NM (United States).
+
+[20] William L. Hamilton, Zhitao Ying, and Jure Leskovec. 2017. Inductive Representation Learning on Large Graphs. Advances in Neural Information Processing Systems (NeurIPS) (2017), 1024-1034.
+
+[21] Xiaobo Hao, Yudan Liu, Ruobing Xie, Kaikai Ge, Linyao Tang, Xu Zhang, and Leyu Lin. 2021. Adversarial feature translation for multi-domain recommendation. In Proceedings of the 27th ACM SIGKDD Conference on Knowledge Discovery & Data Mining. 2964-2973.
+
+[22] Ruining He and Julian McAuley. 2016. Ups and downs: Modeling the visual evolution of fashion trends with one-class collaborative filtering. In proceedings of the 25th international conference on world wide web. 507-517.
+
+[23] Xiangnan He, Kuan Deng, Xiang Wang, Yan Li, Yongdong Zhang, and Meng Wang. 2020. Lightgcn: Simplifying and powering graph convolution network for recommendation. In Proceedings of the 43rd International ACM SIGIR conference on research and development in Information Retrieval. 639-648.
+
+[24] Guangneng Hu, Yu Zhang, and Qiang Yang. 2018. Conet: Collaborative cross networks for cross-domain recommendation. In Proceedings of the 27th ACM international conference on information and knowledge management. 667-676.
+
+[25] Yangqin Jiang, Chao Huang, and Lianghao Huang. 2023. Adaptive graph contrastive learning for recommendation. In Proceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and Data Mining. 4252-4261.
+
+[26] SeongKu Kang, Junyoung Hwang, Dongha Lee, and Hwanjo Yu. 2019. Semi-supervised learning for cross-domain recommendation to cold-start users. In Proceedings of the 28th ACM International Conference on Information and Knowledge Management. 1563-1572.
+
+[27] Leo Katz. 1953. A new status index derived from sociometric analysis. Psychometrika 18, 1 (1953), 39-43.
+
+[28] Thomas N. Kipf and Max Welling. 2017. Semi-Supervised Classification with Graph Convolutional Networks. Proceedings of ICLR (2017).
+
+[29] Jia Li, Yongfeng Huang, Heng Chang, and Yu Rong. 2022. Semi-supervised hierarchical graph classification. IEEE Transactions on Pattern Analysis and Machine Intelligence 45, 5 (2022), 6265-6276.
+
+[30] Pan Li, Zhichao Jiang, Maofei Que, Yao Hu, and Alexander Tuzhilin. 2021. Dual attentive sequential learning for cross-domain click-through rate prediction. In Proceedings of the 27th ACM SIGKDD conference on knowledge discovery & data mining. 3172-3180.
+
+[31] Jing Liu, Lele Sun, Weizhi Nie, Peiguang Jing, and Yuting Su. 2024. Graph Disentangled Contrastive Learning with Personalized Transfer for Cross-Domain Recommendation. In Proceedings of the AAAI Conference on Artificial Intelligence, Vol. 38. 8769-8777.
+
+[32] Zhiwei Liu, Lei Zheng, Jiawei Zhang, Jiayu Han, and S Yu Philip. 2019. JSCN: Joint spectral convolutional network for cross domain recommendation. In 2019 IEEE international conference on big data (big data). IEEE, 850-859.
+
+[33] Fuyu Lv, Taiwei Jin, Changlong Yu, Fei Sun, Quan Lin, Keping Yang, and Wilfred Ng. 2019. SDM: Sequential deep matching model for online large-scale recommender system. In Proceedings of the 28th ACM International Conference on Information and Knowledge Management. 2635-2643.
+
+[34] Jianxin Ma, Chang Zhou, Hongxia Yang, Peng Cui, Xin Wang, and Wenwu Zhu. 2020. Disentangled self-supervision in sequential recommenders. In Proceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining. 483-491.
+
+[35] Tong Man, Huawei Shen, Xiaolong Jin, and Xueqi Cheng. 2017. Cross-domain recommendation: An embedding and mapping approach.. In IJCAI, Vol. 17. 2464- 2470.
+
+[36] Mark Newman. 2018. Networks. Oxford university press.
+
+[37] Byungkook Oh, Yul Kim, and Bumky Min. 2023. Dual-Oriented Contrast for Recommendation with A Stop-Gradient Operation. In Proceedings of the 32nd ACM International Conference on Information and Knowledge Management. 1939- 1948.
+
+[38] Aaron van den Oord, Yazhe Li, and Oriol Vinyals. 2018. Representation learning with contrastive predictive coding. arXiv preprint arXiv:1807.03748 (2018).
+
+[39] Wentao Ouyang, Xiuwu Zhang, Lei Zhao, Jinmei Luo, Yu Zhang, Heng Zou, Zhao-jie Liu, and Yanlong Du. 2020. Minet: Mixed interest network for cross-domain click-through rate prediction. In Proceedings of the 29th ACM international conference on information & knowledge management. 2669-2676.
+
+[40] Ruihong Qiu, Zi Huang, and Hongzhi Yin. 2021. Memory augmented multi-instance contrastive predictive coding for sequential recommendation. In 2021 IEEE International Conference on Data Mining (ICDM). IEEE, 519-528.
+
+[41] Xuanchi Ren, Tao Yang, Yuwang Wang, and Wenjun Zeng. 2021. Learning disentangled representation by exploiting pretrained generative models: A contrastive learning view. arXiv preprint arXiv:2102.10543 (2021).
+
+[42] Matthew Schultz and Thorsten Joachims. 2003. Learning a distance metric from relative comparisons. Advances in neural information processing systems 16 (2003).
+
+[43] Nidhi Vakil and Hadi Amiri. 2023. Curriculum Learning for Graph Neural Networks: A Multiview Competence-based Approach. In Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers). 7036-7051.
+
+[44] Petar Veličković, Guillem Cucurull, Arantxa Casanova, Adriana Romero, Pietro Liò, and Yoshua Bengio. 2018. Graph Attention Networks. In ICLR 2018 : 6th International Conference on Learning Representations.
+
+[45] Botao Wang, Jia Li, Heng Chang, Keli Zhang, and Fugee Tsung. 2024. Heterophilic Graph Neural Networks Optimization with Causal Message-passing. arXiv preprint arXiv:2411.13821 (2024).
+
+[46] Chen Wang, Yueqing Liang, Zhiwei Liu, Tao Zhang, and S Yu Philip. 2021. Pretraining graph neural network for cross domain recommendation. In 2021 IEEE Third International Conference on Cognitive Machine Intelligence (CogMI). IEEE, 140-145.
+
+[47] Xin Wang, Heng Chang, Beini Xie, Tian Bian, Shiji Zhou, Daixin Wang, Zhiqiang Zhang, and Wenwu Zhu. 2023. Revisiting adversarial attacks on graph neural networks for graph classification. IEEE Transactions on Knowledge and Data Engineering (2023).
+
+[48] Xin Wang, Yudong Chen, and Wenwu Zhu. 2021. A survey on curriculum learning. IEEE Transactions on Pattern Analysis and Machine Intelligence 44, 9 (2021), 4555-4576.
+
+[49] Zihao Wu, Xin Wang, Hong Chen, Kaidong Li, Yi Han, Lifeng Sun, and Wenwu Zhu. 2023. Diff4Rec: Sequential Recommendation with Curriculum-scheduled Diffusion Augmentation. In Proceedings of the 31st ACM International Conference on Multimedia. 9329-9335.
+
+[50] Zhirong Wu, Yuanjun Xiong, Stella X Yu, and Dahua Lin. 2018. Unsupervised feature learning via non-parametric instance discrimination. In Proceedings of the IEEE conference on computer vision and pattern recognition. 3733-3742.
+
+[51] Beini Xie, Heng Chang, Ziwei Zhang, Xin Wang, Daixin Wang, Zhiqiang Zhang, Rex Ying, and Wenwu Zhu. 2023. Adversarially robust neural architecture search for graph neural networks. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. 8143-8152.
+
+[52] Beini Xie, Heng Chang, Ziwei Zhang, Zeyang Zhang, Simin Wu, Xin Wang, Yuan Meng, and Wenwu Zhu. 2024. Towards Lightweight Graph Neural Network Search with Curriculum Graph Sparsification. In Proceedings of the 30th ACM SIGKDD Conference on Knowledge Discovery and Data Mining. 3563-3573.
+
+[53] Ruobing Xie, Qi Liu, Shukai Liu, Ziwei Zhang, Peng Cui, Bo Zhang, and Leyu Lin. 2021. Improving accuracy and diversity in matching of recommendation with diversified preference network. IEEE Transactions on Big Data 8, 4 (2021), 955-967.
+
+[54] Ruobing Xie, Qi Liu, Liangdong Wang, Shukai Liu, Bo Zhang, and Leyu Lin. 2022. Contrastive cross-domain recommendation in matching. In Proceedings of the 28th ACM SIGKDD Conference on Knowledge Discovery and Data Mining. 4226-4236.
+
+[55] Ruobing Xie, Zhijie Qiu, Jun Rao, Yi Liu, Bo Zhang, and Leyu Lin. 2020. Internal and Contextual Attention Network for Cold-start Multi-channel Matching in Recommendation. In Proceedings of IJCAI.
+
+[56] Keyulu Xu, Chengtao Li, Yonglong Tian, Tomohiro Sonobe, Ken-ichi Kawarabayashi, and Stefanie Jegelka. 2018. Representation learning on graphs with jumping knowledge networks. In Proceedings of ICML 2018. PMLR, 5453- 5462.
+
+[57] Xin Yang, Heng Chang, Zhijian Lai, Jinze Yang, Xingrun Li, Yu Lu, Shuaiqiang Wang, Dawei Yin, and Erxue Min. 2024. Hyperbolic contrastive learning for cross-domain recommendation. In Proceedings of the 33rd ACM International Conference on Information and Knowledge Management. 2920-2929.
+
+[58] Yuning You, Tianlong Chen, Yongduo Sui, Ting Chen, Zhangyang Wang, and Yang Shen. 2020. Graph contrastive learning with augmentations. Advances in neural information processing systems 33 (2020), 5812-5823.
+
+[59] Junliang Yu, Hongzhi Yin, Xin Xia, Tong Chen, Lizhen Cui, and Quoc Viet Hung Nguyen. 2022. Are graph augmentations necessary? simple graph contrastive learning for recommendation. In Proceedings of the 45th international ACM SIGIR conference on research and development in information retrieval. 1294- 1303.
+
+[60] Lingzi Zhang, Yong Liu, Xin Zhou, Chunyan Miao, Guoxin Wang, and Haihong Tang. 2022. Diffusion-based graph contrastive learning for recommendation with implicit feedback. In International Conference on Database Systems for Advanced Applications. Springer, 232-247.
+
+[61] Wei Zhang, Pengye Zhang, Bo Zhang, Xingxing Wang, and Dong Wang. 2023. A Collaborative Transfer Learning Framework for Cross-domain Recommendation. In Proceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and Data Mining. 5576-5585.
+
+[62] Chuang Zhao, Hongke Zhao, Ming He, Jian Zhang, and Jianping Fan. 2023. Cross-domain recommendation via user interest alignment. In Proceedings of the ACM Web Conference 2023. 887-896.
+
+[63] Tong Zhao, Gang Liu, Daheng Wang, Wenhao Yu, and Meng Jiang. 2022. Learning from counterfactual links for link prediction. In International Conference on Machine Learning. PMLR, 26911-26926.
+
+[64] Yi Zhao, Chaozhuo Li, Jiquan Peng, Xiaohan Fang, Feiran Huang, Senzhang Wang, Xing Xie, and Jibing Gong. 2023. Beyond the overlapping users: cross-domain recommendation via adaptive anchor link learning. In Proceedings of the 46th international ACM SIGIR conference on research and development in information retrieval. 1488-1497.
+
+[65] Kun Zhou, Hui Wang, Wayne Xin Zhao, Yutao Zhu, Sirui Wang, Fuzheng Zhang, Zhongyuan Wang, and Ji-Rong Wen. 2020. S3-rec: Self-supervised learning for sequential recommendation with mutual information maximization. In Proceedings of the 29th ACM international conference on information & knowledge management. 1893-1902.
+
+[66] Feng Zhu, Chaochao Chen, Yan Wang, Guanfeng Liu, and Xiaolin Zheng. 2019. Dtcdr: A framework for dual-target cross-domain recommendation. In Proceedings of the 28th ACM International Conference on Information and Knowledge Management. 1533-1542.
+
+[67] Yanqiao Zhu, Yichen Xu, Feng Yu, Qiang Liu, Shu Wu, and Liang Wang. 2021. Graph contrastive learning with adaptive augmentation. In Proceedings of the
+
+Web Conference 2021. 2069-2080.
+
+## A Additional Experimental Setup
+
+Implementation details. All baselines are either directly adopted from their open-source codes or manually re-implemented based on their descriptions in original papers. For SCCDR, we set the Aggr in GraphSAGE as the mean operation and the Comb in JK-Net as concatenation. The temperature \( \tau \) for contrastive losses is set to 0.5. We use NetworkX [19] to calculate the Katz centrality for all nodes during the pre-processing step. We set \( \alpha  = {0.1} \) and \( \beta  = {1.0} \) as default in NetworkX since we observe the performance is not sensitive to them. We set the loss weights \( {\lambda }_{\text{ intra }} = {1.0} \) and \( {\lambda }_{\text{ inter }} = {0.5} \) through grid search as analyzed in Section 5.4. For all methods, we set the dimension of output embedding as 128 , repeat every experiment 5 times then report the mean performance. All embedding sizes are set as 64 , and the learning rate of these models is searched from \( \left\{  {1{\mathrm{e}}^{-2},1{\mathrm{e}}^{-3},1{\mathrm{e}}^{-4}}\right\} \) with weight decay as \( 5{\mathrm{e}}^{-4} \) and batch-size is searched from \( \{ {1024},{2048},{4096}\} \) .
+
+Evaluation metric and competing methods. We follow [54] and other classical matching models [53,55] to utilize the top \( N \) hit rate (HIT@N) as our evaluation metric, which means that all models select top \( N \) items from the overall corpora for each test instance. In other words, the full negative samples against each test instance are evaluated in HIT@N.We should double clarify that SCCDR focuses on CDR in matching, which cares whether good items are retrieved, not the specific ranks that should be measured by ranking. Therefore, HIT@N is more suitable for matching than ranking metrics such as AUC and NDCG as indicated in CCDR [54]. Even though, we also investigate the AUC metric in the sensitivity analysis of loss weights for complementary evaluation in Section 5.4.
+
+We implement several competitive baselines for comparisons, including classical and graph-based matching methods: Classical matching methods:
+
+- MV-DNN (Elkahky et al. 2015) is a pioneer work that jointly learns from features of items from different domains and user features by introducing a multi-view DNN model.
+
+- EMCDR (Man et al. 2017) is an embedding and mapping approach for matching tasks in CDR.
+
+- DTCDR (Zhu et al. 2019) is based on Multi-Task Learning (MTL), and an adaptable embedding sharing strategy to combine embed-dings of overlapped users.
+
+Graph-based matching methods:
+
+- HeroGraph (Cui et al. 2020) proposes a heterogeneous graph framework for CDR and refines neighbor aggregation by recurrent attention.
+
+- GraphDR+ (Xie et al. 2021) is an effective graph-based matching model that is directly constructed by modifying the single-domain version GraphDR on the joint network containing both source and target domains.
+
+- CCDR (Xie et al. 2022) is a novel framework to deal with CDR in matching by intra- and inter-domain CL with multi-task optimization, which is the most related work to SCCDR.
+
+- COAST (Zhao et al. 2023b) aims to leverage rich content information and user interest alignment for bidirectional knowledge transfer in CDR.

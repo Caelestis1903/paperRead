@@ -1,0 +1,577 @@
+# GCTN: Graph Competitive Transfer Network for Cross-Domain Multi-Behavior Prediction
+
+Lei Zhang (C), Senior Member, IEEE, Wuji Zhang (C), Likang Wu
+
+Abstract-Recently, the multi-behavior information on a specific domain has been successfully exploited by aggregating diverse user behaviors to solve the problems of cold start and data sparsity in recommendations. However, the user behavior information captured from multiple behaviors in a single domain is insufficient. Our study seeks to enhance user behavior prediction by leveraging both multi-behavior information and cross-domain information in a more effective manner. In order to explore the correlations and differences between different behaviors and different domains, we propose a novel competition framework consists of intra-domain competition and inter-domain competition for knowledge learning. Specifically, for intra-domain, a behavior competition mechanism is designed to enable the model to mine users' interests and behavior patterns effectively. For inter-domain, a domain competition mechanism is designed to perform knowledge transfer and knowledge fusion for overlapping users in different domains. Through the competition mechanisms, our proposed Graph Competitive Transfer Network (GCTN) achieves knowledge transfer between different domains and captures users' behavior patterns in different contexts. The effectiveness of the GCTN and its competition mechanisms has been validated through sufficient experimental trials on Douban and Amazon datasets. Compared to baseline methods, GCTN has demonstrated a marked improvement in both AUC and F1 scores.
+
+Index Terms-Graph neural networks, competition mechanism, multi-behavior prediction, cross-domain prediction.
+
+## I. INTRODUCTION
+
+WITH the rapid growth of online platforms, the problem of data sparsity and cold start has become increasingly prominent in recommender systems [1]. The expansion of online platforms leads to a larger pool of users and items, but this growth is not proportional to the number of observed interactions between users and items. As a result, the data becomes more sparse, making it challenging for traditional recommendation models to effectively predict user preferences and provide accurate personalized recommendations.
+
+To address these challenges, recent research has focused on leveraging multi-behavior information to enhance the performance of user behavior prediction [2], [3]. Researches in this direction aim to capture various types of user behaviors, including neutral and negative behaviors. For instance, in an e-commerce platform, users may exhibit neutral behaviors when browsing products without making any specific actions or negative behaviors when giving low ratings and negative reviews. By considering a broader range of user behaviors, we can gain deeper insights into users' interests, preferences, and behavior patterns [4], [5]. The rich information provided by multi-behavior data enables us to develop more fine-grained and informative models for behavior prediction [6], [7].
+
+Moreover, the exploration of cross-domain information has emerged as a promising approach to improve recommendation accuracy [3], [8]. Different domains, such as movies, books, and music, often exhibit interdependencies and correlations. Leveraging the cross-domain connections can provide a comprehensive understanding of users' preferences and enable knowledge transfer between domains. For instance, a user's experience within the movie sphere can enhance the discovery of her musical preferences, leading to improved accuracy in predicting music-related behaviors. For example, as illustrated in Fig. 1, we observed that user \( {u}_{2} \) interacted with both sad music \( {i}_{3} \) and happy musics \( {i}_{4} \) in the target domain, making it difficult to determine his preference. However, by analyzing behavioral competition in the source domain, we can extract insights into users' preferences for happy music. Based on this acquired knowledge, we can predict that \( {u}_{2} \) is likely to interact with happy music \( {i}_{2} \) and \( {i}_{4} \) in the target domain.
+
+However, most existing methods only utilize multi-behavior information or cross-domain information, ignoring the synergies or competitions between multi-behaviors of users in different domains. Neglecting these aspects lead to poor performance in behavior prediction tasks. Mining competing relationships between multi-behaviors within a single domain and competing relationships between different domain knowledge is not an easy task. Competing relationships refer to connections between different behaviors competing for the influence or dominance in a model. Specifically, for intra-domain, users will generate many different behaviors, each with its own meaning, and there are complex relationships between the behaviors, mining and understanding these behaviors is a challenging task. For inter-domains, there may be differences and connections between the meanings expressed by users' behaviors, and it is a challenging task to discover the correlations and differences of behaviors between different domains. Balancing the optimization of both dimensions requires careful consideration of trade-offs. To fill the gap, in this study, we propose a novel model, the Graph Competitive Transfer Network (GCTN), to address the challenges by jointly mining multi-behavior information and cross-domain information. Uncovering these competing relationships is crucial as it deepens our understanding of intricate behavioral dynamics within a specific domain and provides insights into the interplay between distinct domains. This exploration enhances both the granularity of behavior knowledge within a domain and the broader comprehension of relationships across different domains.
+
+---
+
+Received 13 April 2024; revised 3 January 2025; accepted 22 March 2025. Date of publication 26 March 2025; date of current version 28 May 2025. This work was supported in part by the National Natural Science Foundation of China under Grant 61976001, Grant 72471165, in part by the Natural Science Foundation of Anhui Province Grant 2408085MF152, and also supported in part by the Key Projects of University Excellent Talents Support Plan of Anhui Provincial Department of Education under Grant gxyqZD2021089. Recommended for acceptance by X. Zhu. (Corresponding author: Hongke Zhao.)
+
+Lei Zhang and Wuji Zhang are with the Information Materials and Intelligent Sensing Laboratory of Anhui Province, School of Computer Science and Technology, Anhui University, Hefei 230093, China (e-mail: zl@ahu.edu.cn; e21201077@stu.ahu.edu.cn).
+
+Likang Wu and Hongke Zhao are with the College of Management and Economics, Laboratory of Computation and Analytics of Complex Management Systems (CACMS), Tianjin University, Tianjin 300072, China (e-mail: wulk@tju.edu.cn; hongke@tju.edu.cn).
+
+Digital Object Identifier 10.1109/TKDE.2025.3554610
+
+---
+
+![1_402_186_955_452_0.jpg](images/1_402_186_955_452_0.jpg)
+
+Fig. 1. Multi-behavior data of users in the cross-domain scenario. In the user-item interactions graph, the solid lines represent user's behaviors, while dashed lines indicate behaviors predicted by the model. As depicted for \( {u}_{2} \) , the preference knowledge captured from analyzing multi-behavioral patterns of \( {u}_{2} \) in the source domain (movie) can be transferred to the target domain (music). This transfer guides the model towards enhanced accuracy in behavior prediction.
+
+In the GCTN model, we introduce an effective competitive method to mine multi-behavior and domain information. Within a single domain, we analyze the loss gradients of different behaviors to capture their synergistic effects. Between domains, we apply transfer learning on overlapping users' behaviors to better understand user behavior patterns across domains. These two competitive mechanisms help us extract more valuable features, leading to a detailed description of users' interests and behaviors.
+
+The key contributions of this work are summarized as:
+
+- We first leverage multi-behavior and cross-domain information about users for behavior prediction, presenting a new perspective and integrating cross-domain data to enhance performance.
+
+- We propose the GCTN model with intra-domain and inter-domain competition mechanisms, fusing graph neural network modules, competitive mechanisms and knowledge transfer for accurate prediction.
+
+- We conduct experiments on various real-world datasets, showing GCTN's good performance compared to baselines, and ablation experiments verify the effectiveness of the proposed competition mechanisms.
+
+## II. RELATED WORK
+
+## A. Graph Representation Learning
+
+Graph representation learning has seen a rise in popularity in recent years. Many graph embedding representation techniques, including Node2Vec [9] and DeepWalk [10], use the sequence produced by random walks to acquire node embeddings. Nowadays, a new line of study is graph embedding, which is an approach for embedding node encoding into the graph structure. As a result, both local homophily information of neighboring nodes and topological information of the network are contained in the final embedding vector. Since the proposal, Graph Neural Networks (GNN) have grown in popularity and several research have been raised by researchers. For example, GraphSage [11] improves the sampling method and aggregation process for GNN. GAT [12] employs the attention mechanism to provide suitable weights to distinct nodes while aggregating neighbor knowledge.
+
+Additionally, there are many real-world applications of graph representation learning. Graph neural networks (GNNs) have a key influence on mining entity features and the relationship between entities [13]. In the field of recommendation systems, GNNs are highly sought after. According to certain studies [3], [14], interactions between users and items are modeled as bipartite graphs with edges connecting users and items. GNNs have also been used in several works [15], [16] to represent knowledge graphs for recommender systems. However, users' interactions with items are rarely taken into account. Recently, Li et al. [17] simulate the interaction between user and item attributes using GNNs and Su et al. [18] utilize graph neural networks' relational reasoning capabilities to model feature intersections and use GNNs to automatically find second-order feature intersections. While representation learning techniques have demonstrated strong performance in recommender systems, the majority of them overlook the significance of multi-behavior and cross-domain knowledge. This article presents our model, aiming to provide a comprehensive forecast of various behaviors.
+
+## B. Multi-Behavior Models
+
+The performance of representation learning is enhanced by multi-behavior models through a variety of interactions. For example, Xin et al. [19] present the use of Relational Collaborative Filtering (RCF) in recommender systems to leverage numerous item relations. To improve prediction accuracy, users' social connections are used as supplementary data. In a similar way, Zhao et al. [20] create several matrices depending on different user actions, such as their sharing, following, commenting, and so on. Graph neural networks are used in several works to acquire knowledge by building graphs from multi-behavior information. For instance, Jin et al. [21] design a model of recommendations using behaviorally aware graph convolutional networks that mines the effects of users' different behaviors on items. Xia et al. [22] develop a novel multi-behavior enhanced recommender system and investigate the heterogeneity of relationships using graph meta networks.
+
+Current research employs contrastive learning [23] and multitask learning [24] approaches to extract more collaboration knowledge from multi-behavior data in recommender systems, which achieve remarkable results. Furthermore, Wei et al. [25] suggest the Attentional Multi-behavior Recommendation model as a recommendation system model. Specifically, behavior-level attention can learn the semantic intensity of various behaviors, while node-level attention seeks to comprehend the significance of neighbors under particular behaviors. Xia et al. [26] provide a model called GNMR that investigates the relationships between various behavior types under the messaging architecture. To accomplish high-order connection understanding, Huang et al. [27] present KHGT, which makes use of graph transformer network.
+
+Recent studies have shown significant advancements in this field. For instance, a multi-behavior recommendation approach based on cascading graph convolution networks was introduced [28], which models user behavior to improve recommendation performance. Subsequently, a coarse-to-fine knowledge-enhanced multi-interest learning framework was proposed [29], aiming to enhance recommendation by leveraging knowledge. Additionally, a parallel knowledge enhancement-based framework was proposed [30], showing significant improvements in multi-behavior recommendation. To further enhance the performance of multi-behavior recommendation, researchers proposed a disentangled cascaded graph convolution networks method [31], which effectively captures latent relationships between user behaviors. Further, by analyzing users' multi behaviors across different domains, our approach can better capture their interests and behavior patterns, leading to more accurate predictions. Additionally, our algorithm provides richer behavioral insights by considering the relationships between different domains.
+
+## C. Cross-Domain Models
+
+Cross-domain models [8], [32], [33], [34] serve as a research to address the issues of data sparsity and cold start in single-domain modeling. It uses the correlations between the information in different domains to transfer knowledge and share information, so as to improve the model performance and recommendation effect. There are two types of methods in traditional cross-domain research.
+
+The first type is the method based on feature transformation, which mainly focuses on the transformation and mapping of features in different domains. This method transforms the feature representation of users or objects in one domain into that in another domain by learning the mapping relationship between domains [35]. There are three common methods based on feature transformation. The first is the multi-view recommendation model [36], which regards the characteristics of users or items in different domains as different views, and uses the information of multi-views for feature transformation and fusion. The second is the shared hidden space model [37], which learns a shared hidden space to enable cross-domain recommendation by mapping the features of users or items in multiple domains into the common hidden space. The last one is the domain adaptive model [38], which transforms the features of the source domain into those of the target domain by learning the mapping relationship between domains and domain-specific conversion functions.
+
+![2_920_180_670_358_0.jpg](images/2_920_180_670_358_0.jpg)
+
+Fig. 2. A Multi-Behavior Graph (MBG) sample that serves as an illustration, with yellow circles representing user nodes, green circles representing item nodes and edges of different colors representing various user behaviors. Our model involves integrating GNNs, intra-domain behavior competition, and inter-domain domain competition.
+
+The second type is the method based on knowledge transfer [39], which uses the shared knowledge and model of the source domain to recommend and predict in the target domain. As an example, recommendations in the target domain can be enhanced by transferring user preferences or item association information from the source domain. The method based on knowledge transfer usually requires in-depth analysis and modeling of the relationship and similarity between different domains. There are three common methods based on knowledge transfer. The first is the transfer learning method [40], which assists the recommendation task in the target domain by transferring the knowledge, model parameters or rules in the source domain. The second is the pre-training model [41], which is used to fine tune or transfer learning in the target domain by pre-training the model in the source domain. The last one is the knowledge mapping method [42], which transfers knowledge between domains using the structure found in the knowledge mapping to enhance recommendation performance. Recently, Zhang et al. introduced a novel method [43] for cross-domain recommendation, which decouples domain-specific and domain-conditional representation learning.
+
+Traditional cross-domain methods mainly focus on feature transformation and knowledge transfer between domains, while our method emphasizes extracting multi-behavior information. By analyzing users' multi-behaviors in different domains, we can accurately capture their interests and behavior patterns, improving behavior prediction accuracy. Additionally, our method combines cross-domain and multi-behavior information, offering richer insights by considering the relationships between domains to transfer knowledge and associations.
+
+![3_320_177_1106_644_0.jpg](images/3_320_177_1106_644_0.jpg)
+
+Fig. 3. The overall structure of GCTN. There are three key components: MBG Construction, Representation Learning, and Multi-Behavior Prediction. First, user-item interactions are used to create the MBG. Second, various specific relationships knowledge are extracted by GNN from the MBG and competitive knowledge migration is performed to obtain representations of users and items. Finally, the behavior prediction result is calculated via the MLP.
+
+## III. PROBLEM FORMULATION
+
+Multi-Behavior Graph (MBG) refers to graph that is composed based on multiple behaviors of users, which belongs to heterogeneous graph. Specifically, a heterogeneous graph is a type of knowledge network composed of diverse edges and nodes. To encapsulate diverse information from different domains within the nodes and edges of such a graph, we employ the Multi-Behavior Graph (MBG) as shown in Fig. 2. In the scope of this paper, we dive into the Multi-Behavior Graph (MBG) to tackle the multi-behavior prediction task, extending our exploration to encompass cross-domain information.
+
+## Definition 1: Multi-Behavior Graph
+
+The MBG can be described as a graph \( \mathcal{G} = \left( {\mathcal{V},\mathcal{E}}\right) \) , in which the sets of nodes and edges are denoted, respectively, by \( \mathcal{V} \) and \( \mathcal{E} \) . The user set \( {\mathcal{V}}_{\text{ user }} \) and the item set \( {\mathcal{V}}_{\text{ item }} \) are two sub-sets of the node set \( \mathcal{V} \) . The edge set \( \mathcal{E} \) contains a sub-set, the behavior edge set \( {\mathcal{E}}_{k} \) , where \( {\mathcal{E}}_{k} \) represents the \( k \) th set of user-item behavioral interactions. While item-item and user-user linkages are not present in our MBG, the information about each type link will be extracted from the item-user-item high-order path utilizing the suggested GCTN model.
+
+## Definition 2: User/Item Representation
+
+There are many downstream tasks in the graph neural network. The majority of the impact on the downstream jobs' performance comes from the quality of the representations. The two types of nodes (i.e., users and items) and their relationships (i.e., behavior links) are our primary focus. Let \( {\mathcal{V}}_{\text{ item }} \subset  \mathcal{V} \) represents the sets of items and \( {\mathcal{V}}_{\text{ user }} \subset  \mathcal{V} \) represents the set of users. For user side, our task is to extract the user's interests from prior behavior data for user \( u \in  {\mathcal{V}}_{\text{ user }} \) and get the user embedding \( {h}_{u} \) . For item side, we can leverage the users who have interacted with item \( v \) to obtain the embedding of each item \( v \in  {\mathcal{V}}_{\text{ item }} \) .
+
+Definition 3: Multi-Behavior Prediction
+
+The goal of the multi-behavior prediction tasks is to use item features \( {h}_{v} \) and user feature \( {h}_{u} \) to forecast the possibility that a behavior will occur. The following is how we present the heterogeneous graph neural network for multi-behavior prediction task:
+
+- Input: Source Domain MBG \( {\mathcal{G}}_{S} \) and Target Domain MBG \( {\mathcal{G}}_{T} \) ; The user’s representation \( {h}_{u} \) ; The item’s representation \( {h}_{v} \) ;
+
+- Output: For the given user \( u \) , item \( v \) , and a specific relationship \( {\mathcal{E}}_{k} \) , we are able to forecast the possibility that the relationship will emerge;
+
+We will present an innovative approach, the Graph Competitive Transfer Network (GCTN), customized specifically for this task. The network is skilled at exploiting rich multi-behavioral information and integrating cross-domain data. The proposed GCTN not only ensures efficient exploration of various user behaviors, but also maximizes the correlations between different domains, thus enhancing the multi-behavioral prediction ability of the model.
+
+## IV. METHODOLOGY
+
+## A. Overall Model Architecture
+
+The general model framework diagram is shown in Fig. 3. Our model consists of three key components: MBG construction, Representation Learning, and Multi-Behavior Prediction. The first component is MBG construction, where we construct a MBG based on user-item relationship information. In different domains, MBG includes various types of user interactions, known as domain-aware interaction information. We unify the interactions within each domain to generate a heterogeneous graph and learn the transfer knowledge between the different domains. The second component is representation learning, where we use GCN (Graph Convolutional Network) to learn relationship-based representations of users and items. This component consists of two parts. First, we learn user representations by leveraging user-item interaction information within each domain, which helps us understand user interest. Second, we learn item representations by capturing the potential information through user-item interactions. In the DAC mechanism (Behavior Competition), we dynamically calculate the competitiveness score of each behavior based on various behavioral losses during the batch. By weighting the corresponding losses in the optimization process, we incorporate this competitiveness score into the model, allowing competitive information to naturally flow into the network through gradient backpropagation, thereby enabling efficient parameter learning. We then perform knowledge fusion to fuse knowledge from different spaces to obtain the final user. The third component is multi-behavior prediction, where we predict the probability of relationships. We feed the obtained user and item representations into an MLP [44] network and further train the model. Next, we will provide a detailed introduction to each component of GCTN.
+
+## B. Graph Representation Learning
+
+To explore diverse user-item interactions in recommendation scenarios and to facilitate the collaborative filtering signals, we propose a novel message-passing method for user's and item's representation learning. To better exploit the diverse behavioral information from different domains, we introduce two new mechanisms. First, we propose an intra-domain behavioral competition mechanism for competing among behavioral information in the same domain. This mechanism is able to extract and integrate information from various behaviors to enrich the representation. Second, we introduce a knowledge migration mechanism for cross-domain information competition for information flow and knowledge sharing between different domains. This mechanism allows information from different domains to compete and migrate with each other to enhance the performance and comprehensiveness of representation learning. Specifically, we propose a behavior-based user-to-item propagation method to get the embedded representation of each specific relationship, while using competition for knowledge fusion. Adopting these mechanisms and methods, we are able to better understand and predict users' behaviors, resulting in improved performance of recommendation systems.
+
+1) User Representation: The objective of user representation learning is to acquire an embedded representation of the user, denoted as \( {h}_{u} \) for user \( u \) . Our primary approach focuses on extracting user interests by mining their behavioral information on items. However, we have observed that the impact of each behavioral aspect on user interest is evident, but there exists individualization in these behavioral preferences across different users and domains. Hence, it becomes essential to mine the impact of various behaviors on user's interest and understand the degree to which each behavior contributes to user's interest through adaptive model adjustment. The main challenge lies in capturing user representations from the multi-behavioral information of user-item interactions. To tackle these challenges, we first construct multi-behavior graphs (MBGs) by multi-behavior information. These graphs serve as a foundation for capturing the relationships between users and their behaviors. Subsequently, we aggregate the users' neighborhood features based on various relationships to derive user representations associated with diverse behaviors. These representations are then merged using an aggregation pooling strategy, which combines the information from different relationships. The behavior aggregation and aggregation pooling procedures will be thoroughly explained in the sections that follow.
+
+a) Behavior aggregation: In behavior aggregation, we utilize the Graph Convolutional Networks (GCN) for each user-item relationship in order to capture the diverse behavior knowledge. The GCN model enables us to explore the influence of behavior information on user's interests. In our GCTN model, we understand that various behaviors have varied effects on user interest. To incorporate this understanding, we leverage representation learning by aggregating the users' neighborhood features based on various behaviors. This process allows us to obtain user features that are representative of the various relationships. Our model defines the behavior aggregation equation for user \( u \) based on relation \( k \) as follows:
+
+\[
+{h}_{u, k}^{\left( l\right) } = \sigma \left( {{b}_{u, k}^{\left( l\right) } + \mathop{\sum }\limits_{{v \in  {N}_{k}\left( u\right) }}\frac{1}{\sqrt{\left| {N}_{u}\right| }\sqrt{\left| {N}_{v}\right| }}{W}_{u, k}^{\left( l\right) }{h}_{v}^{\left( l - 1\right) }}\right) , \tag{1}
+\]
+
+where \( {N}_{k}\left( u\right) \) is the set of neighbors of user \( u \) based on relation \( k, l \) represents the number of propagation layers. \( {N}_{u} \) and \( {N}_{v} \) respectively denote the neighbors of user \( u \) and item \( v \) . \( {W}_{u, k}^{\left( l\right) } \) and \( {b}_{u, k}^{\left( l\right) } \) represent the weight and bias respectively. The activation function \( \sigma \) is RELU in our model.
+
+b) User aggregation: Following the application of the aforementioned aggregation method, we are left with the multiple user и representations driven by different behavior information. Knowledge about user behavior is included in the representations and user's interest preferences are influenced differently by various behaviors. Thus, to generate the final representation of user \( u \) , we further perform knowledge fusion by using average aggregation pooling:
+
+\[
+{h}_{u}^{\left( l\right) } = \frac{1}{K}\mathop{\sum }\limits_{{k = 1}}^{K}{h}_{u, k}^{\left( l\right) }, \tag{2}
+\]
+
+where \( {h}_{u, k}^{\left( l\right) } \) indicates the representation of user \( u \) based on behavior type \( k, l \) is the number of propagation layers, and \( K \) is the number of user-item behavior types.
+
+2) Item Representation: Item representation focuses on learning the embedding of items, denoted as \( {h}_{v} \) for item \( v \) . This process involves mining the impact of historical behavior data about preferences of users. The propagation method for items is similar to that in user representation learning. In the multi-behavior graph (MBG), items are connected to user-item interactions, which encompass the user's multi-behavior interactions. Hence, capturing these interactions in the multi-behavior graph becomes crucial for learning item features.
+
+a) Behavior aggregation: For the learning of item representation, we adopt a methodology similar to user representation learning. Specifically, we employ a Graph Convolutional Network (GCN) structure to effectively capture the diverse behavioral information connecting users and items. By aggregating the items's neighborhood features based on different behaviors, we are able to derive comprehensive item features that incorporate relevant behavioral contexts. In our model, we define the behavior aggregation equation for item \( v \) based on relation \( k \) as follows:
+
+\[
+{h}_{v, k}^{\left( l\right) } = \sigma \left( {{b}_{v, k}^{\left( l\right) } + \mathop{\sum }\limits_{{u \in  {N}_{k}\left( v\right) }}\frac{1}{\sqrt{\left| {N}_{u}\right| }\sqrt{\left| {N}_{v}\right| }}{W}_{v, k}^{\left( l\right) }{h}_{u}^{\left( l - 1\right) }}\right) , \tag{3}
+\]
+
+where \( {N}_{K}\left( v\right) \) is the set of neighbors of item \( v \) based on relation \( k, l \) represents the number of propagation layers. \( {N}_{u} \) and \( {N}_{v} \) respectively denote the neighbors of user \( u \) and item \( v.{W}_{v, k}^{\left( l\right) } \) and \( {b}_{v, k}^{\left( l\right) } \) are learnable weight and bias parameters.
+
+b) Item aggregation: After applying behavior aggregation, we can acquire multiple representations of item \( v \) derived from various behavioral information. To further integrate these representations and achieve knowledge fusion, we employ the average aggregation pooling technique. This enables us to derive the final representation of item \( v \) by computing the average of the obtained representations:
+
+\[
+{h}_{v}^{\left( l\right) } = \frac{1}{K}\mathop{\sum }\limits_{{k = 1}}^{K}{h}_{v, k}^{\left( l\right) } \tag{4}
+\]
+
+where \( {h}_{v, k}^{\left( l\right) } \) indicates the representation of user \( u \) based on behavior type \( k, l \) is the number of propagation layers, and \( K \) is the number of user-item behavior types.
+
+3) Competitive Mechanism: It is well known that different behaviors imply diverse user latent interests, and information across different domains also exhibits variations. Simply concatenating or adding these pieces of information may lead to conflicts in behavior or domain information, which can have negative effects on model performance, including negative transfer issues. To address these challenges, we propose the competitive learning mechanism. At the behavior level, we introduce a knowledge fusion approach that captures the importance of different behaviors by weighting the losses of various behaviors, enabling adaptive behavior optimization. At the domain level, we also propose a knowledge transfer mechanism that facilitates the exploration of collaborative and conflicting relationships among domain-specific information by transferring knowledge through overlapping users between domains. By employing competitive transfer, we aim to alleviate negative transfer issues and leverage the knowledge from different domains more effectively. We will give these two competitive learning methodologies a thorough introduction in the sections that follow.
+
+a) Behavior competition (Intra-Domain): To explore the significance of various behaviors, we propose a competing strategy for fusing behavioral information. Traditional methods tend to simply aggregate different behaviors using either the mean or sum operation, which ignores the importance of each behavior. Some methods [12], [45] use attention mechanisms to learn the importance scores of edges connecting adjacent behaviors during aggregation, but this tends to introduce a lot of computational complexity and focuses only on local behavioral information. In our proposed competitive strategy, we calculate the competitiveness of each behavior from a global perspective, using the various behavioral losses during the in-batch. Finally, we incorporate this competitiveness by weighting the corresponding losses in the optimization process, and naturally flow the competitive information into the network for parameter learning through gradient back propagation.
+
+For the \( k \) th interaction behavior, we calculate its loss as shown in (5):
+
+\[
+{\operatorname{Loss}}_{k} =  - \log \left\lbrack  {\sigma \left( {\widehat{y}}_{u, v}\right) }\right\rbrack   - \mathop{\sum }\limits_{{{v}_{i} \sim  p\left( v\right) , i = 1,\ldots , k}}\log \left\lbrack  {1 - \sigma \left( {y}_{u,{v}_{i}}\right) }\right\rbrack  ,
+\]
+
+(5)
+
+where \( p\left( v\right) \) represents a negative sampling distribution, \( {v}_{i} \) is sampled from the uniform distribution \( p\left( v\right) \) , each edge \( \left( {u, v}\right) \) gets \( k \) associated negative samples \( \left\{  {\left( {u,{v}_{i}}\right)  \mid  i = 1,\ldots , k}\right\}  ,{\widehat{y}}_{u, v} \) represents the score of the edge for the positive sample \( \left( {u, v}\right) \) and \( {y}_{u,{v}_{i}} \) represents the score of the edge for the negative sample \( \left( {u,{v}_{i}}\right) \) .
+
+To learn knowledge efficiently over multiple behaviors, we apply a multi-behavioral competition mechanism to fuse our behavioral knowledge. For most previous multi-behavioral models, it is difficult to distinguish the importance of different behaviors and allocate suitable weight to every behavior, thus some approaches have been put out to address this problem [46], [47], [48]. To address the above issues, we present a simple adaptive competition method called Dynamic Adaptive Competition (DAC). First, after obtaining the model predictions and negative sampling edges within the batch, we apply the (5) to compute cumulative behavior loss for current batch. Then, the weights of each behavior are updated dynamically based on the (6) in each epoch of training. The specific details are described below.
+
+Within each batch of the training process, we dynamically calculate the weights of each behavior by leveraging the proposed behavior competition method between various behaviors. In the DAC method, we calculate the weight of the specific behavior \( k \) as follow:
+
+\[
+{\omega }_{k} = \frac{{e}^{{\operatorname{Loss}}_{k}}}{\mathop{\sum }\limits_{{j = 1}}^{n}{e}^{{\operatorname{Loss}}_{j}}}, \tag{6}
+\]
+
+where \( n \) is the number of behaviors. The majority of the previous approaches call for sophisticated information, including network gradients, or calculate weights independently for each edge's behavior locally, giving the model a complexity that is not equal to the reward. However, we only need to compute the competition score once for a batch, so our approach is simpler and more efficient to implement.
+
+b) Domain competition (Inter-Domain): Different domains exhibit variations and entail both differences and similarities in their information. Simply combining or adding information from diverse domains can result in conflicts and discrepancies, leading to suboptimal model performance and negative transfer effects. To address these challenges, we propose a domain competitive learning mechanism that focuses on the competitive dynamics between domains as shown in Fig. 4. This approach enables us to effectively explore the collaborative aspects and address conflicting relationships between domain-specific information. By leveraging this competitive transfer mechanism, we aim to enhance the overall model's ability to leverage knowledge from diverse domains. By employing this competitive learning mechanism, we can alleviate negative transfer issues and harness the knowledge from different domains more effectively. In the subsequent sections, we will provide a detailed introduction to the competitive learning strategies.
+
+![6_133_187_695_408_0.jpg](images/6_133_187_695_408_0.jpg)
+
+Fig. 4. In-batch user domain competition.
+
+There is a difference in the feature information of the items under two different domains, so we cannot perform competitive migration of item features, because the forced migration of different semantic spaces will cause negative effects and is not interpretive. Specifically, we perform competitive migration through the overlapping user groups in the two domains, fusing and competitively migrating information between domains by using users as a delivery medium. For two different domains in a single batch the list of user representations is denoted as:
+
+\[
+{h}_{u,\text{ batch }}^{S} = \left\lbrack  {{h}_{u, s,1}^{\left( l\right) },{h}_{u, s,2}^{\left( l\right) },{h}_{u, s,3}^{\left( l\right) },\ldots ,{h}_{u, s,{\mathcal{B}}_{s}}^{\left( l\right) }}\right\rbrack  , \tag{7}
+\]
+
+\[
+{h}_{u,\text{ batch }}^{T} = \left\lbrack  {{h}_{u, t,1}^{\left( l\right) },{h}_{u, t,2}^{\left( l\right) },{h}_{u, t,3}^{\left( l\right) },\ldots ,{h}_{u, t,{\mathcal{B}}_{t}}^{\left( l\right) }}\right\rbrack  , \tag{8}
+\]
+
+where \( {h}_{u, s,1}^{\left( l\right) } \) represents the user feature at the first position within a single batch in the source domain space and \( {h}_{u, t,1}^{\left( l\right) } \) represents the user feature at the first position within a single batch in the target domain space. For most of the cases, the batch size \( \mathcal{B} \) of our two domains are the same, and we perform the elemental product operation on them to get the hybrid user features of the two domains as follows:
+
+\[
+{h}_{u,\text{ batch }}^{H} = {h}_{u,\text{ batch }}^{T} \odot  {h}_{u,\text{ batch }}^{S}, \tag{9}
+\]
+
+For the case where the batch size of the source domain is smaller than that of the target domain, we make up the missing positions of the batch in the source domain by 0 as:
+
+\[
+{h}_{u,\text{ batch }}^{H} = {h}_{u,\text{ batch }}^{T} \odot  \left( {{h}_{u,\text{ batch }}^{S} \cup  \underset{\left| \right| {h}_{u,\text{ batch }}^{S}\left| \right|  - \left| {h}_{u,\text{ batch }}^{T}\right| \left| \right| }{\underbrace{\left\lbrack  0,0,\ldots ,0\right\rbrack  }}}\right) ,
+\]
+
+(10)
+
+For the case where the batch size of the source domain is larger than the batch size of the target domain, we will truncate the excess positions in the source domain as:
+
+\[
+{h}_{u,\text{ batch }}^{H} = {h}_{u,\text{ batch }}^{T} \odot  {h}_{u,\text{ batch }}^{S}\left\lbrack  { : \left| {h}_{u,\text{ batch }}^{S}\right|  - \left| {h}_{u,\text{ batch }}^{T}\right| }\right\rbrack  ,
+\]
+
+(11)
+
+After obtaining the two domain features within the batch \( {h}_{u,\text{ batch }}^{S},{h}_{u,\text{ batch }}^{T} \) as well as the crossover features \( {h}_{u,\text{ batch }}^{H} = \; \left\lbrack  {{h}_{u, h,1}^{\left( l\right) },{h}_{u, h,2}^{\left( l\right) },{h}_{u, h,3}^{\left( l\right) },\ldots ,{h}_{u, h,{\mathcal{B}}_{h}}^{\left( l\right) }}\right\rbrack \) , we average each of the domain features within this three batch, so as to obtain the domain competition score as follows:
+
+\[
+{D}_{u}^{S} = \frac{1}{{\mathcal{B}}_{s}}\mathop{\sum }\limits_{{j = 1}}^{{\mathcal{B}}_{s}}{h}_{u, s, j}^{\left( l\right) } \tag{12}
+\]
+
+\[
+{D}_{u}^{T} = \frac{1}{{\mathcal{B}}_{t}}\mathop{\sum }\limits_{{j = 1}}^{{\mathcal{B}}_{t}}{h}_{u, t, j}^{\left( l\right) }, \tag{13}
+\]
+
+\[
+{D}_{u}^{H} = \frac{1}{{\mathcal{B}}_{h}}\mathop{\sum }\limits_{{j = 1}}^{{\mathcal{B}}_{h}}{h}_{u, h, j}^{\left( l\right) } \tag{14}
+\]
+
+We calculate the competitiveness coefficients for each domain as follows:
+
+\[
+{\beta }_{S} = \frac{{e}^{{D}_{u}^{S}}}{{e}^{{D}_{u}^{S}} + {e}^{{D}_{u}^{T}} + {e}^{{D}_{u}^{H}}}, \tag{15}
+\]
+
+\[
+{\beta }_{T} = \frac{{e}^{{D}_{u}^{T}}}{{e}^{{D}_{u}^{S}} + {e}^{{D}_{u}^{T}} + {e}^{{D}_{u}^{H}}}, \tag{16}
+\]
+
+\[
+{\beta }_{H} = \frac{{e}^{{D}_{u}^{H}}}{{e}^{{D}_{u}^{S}} + {e}^{{D}_{u}^{T}} + {e}^{{D}_{u}^{H}}}, \tag{17}
+\]
+
+Finally, we weight and sum the user feature values of the three domains within the batch with the corresponding domain competition coefficients to obtain the fused user representation as follows:
+
+\[
+{h}_{u,\text{ batch }} = {\beta }_{S} * {h}_{u,\text{ batch }}^{S} + {\beta }_{T} * {h}_{u,\text{ batch }}^{T} + {\beta }_{H} * {h}_{u,\text{ batch }}^{H},
+\]
+
+(18)
+
+4) Multi-Behavior Prediction: In the GCTN model, we utilize user and item representations to compute behavioral scores. We concatenate user representations and item representations \( \left\lbrack  {{h}_{u} \oplus  {h}_{v}}\right\rbrack \) and feed them into the MLP to predict scores:
+
+\[
+{\widehat{y}}_{u, v}^{GCTN} = {MLP}\left( \left\lbrack  {{h}_{u} \oplus  {h}_{v}}\right\rbrack  \right) , \tag{19}
+\]
+
+where the final representations of the user and item are \( {h}_{u} \) and \( {h}_{v} \) , respectively. Our study concentrates on how to mine the competitive relationship between behavioral information and the competitive relationships between domain competition. As a result, we merely employ a simple MLP approach for the operation of behavioral scores, or edge scores, and we get good results in practical settings.
+
+## C. Model Optimization
+
+In order to enhance the performance of the presented model GCTN, we employ a multi-task approach that the multi-behavior prediction task. \( {L}_{\text{ behavior }} \) calculates the behavior loss based on the predicted behavior score \( {\widehat{y}}_{u,{v}^{k}} \) and the sampled negative behavior score \( {y}_{u,{v}^{k}} \) . The following is a formulation of the single behavior loss function:
+
+\[
+{L}_{\text{ behavior }}^{k} =  - \log \left\lbrack  {\sigma \left( {\widehat{y}}_{u, v}\right) }\right\rbrack   - \mathop{\sum }\limits_{{{v}_{i} \sim  p\left( v\right) , i = 1,\ldots , k}}\log \left\lbrack  {1 - \sigma \left( {y}_{u,{v}_{i}}\right) }\right\rbrack  ,
+\]
+
+(20)
+
+where \( p\left( v\right) \) represents a negative sampling distribution, \( {v}_{i} \) is sampled from the uniform distribution \( p\left( v\right) \) , and each edge \( \left( {u, v}\right) \) gets \( k \) associated negative samples \( \left( {u,{v}_{i}}\right) \) . The overall loss function is formulated as a linear weighted sum:
+
+\[
+{L}_{\text{ behavior }} = \mathop{\sum }\limits_{{k \in  U}}{\omega }_{k} \cdot  {L}_{\text{ behavior }}^{k}, \tag{21}
+\]
+
+\[
+{L}_{\text{ total }} = {L}_{\text{ behavior }} + \mu \parallel \Theta {\parallel }_{2}^{2}. \tag{22}
+\]
+
+TABLE I
+
+STATISTICS OF THE DOUBAN-BOOK, DOUBAN-MOVIE AND DOUBAN-MUSIC
+
+<table><tr><td>Dataset</td><td>Douban-Book</td><td>Douban-Movie</td><td>Douban-Music</td></tr><tr><td>#of Users</td><td>46,548</td><td>94,890</td><td>39,742</td></tr><tr><td>#of Items</td><td>212,995</td><td>81,906</td><td>164,223</td></tr><tr><td>#of Like Behaviors</td><td>1,006,923</td><td>6,497,865</td><td>1,024,829</td></tr><tr><td>#of Neutral Behaviors</td><td>302,078</td><td>2,140,600</td><td>194,753</td></tr><tr><td>#of Dislike Behaviors</td><td>44,218</td><td>451,613</td><td>19,470</td></tr><tr><td>#of Overall interactions</td><td>1,353,219</td><td>9,090,078</td><td>1,239,052</td></tr><tr><td>#of Average interactions</td><td>29.07</td><td>95.79</td><td>31.17</td></tr><tr><td>#of User-Item Density</td><td>0.013%</td><td>0.117%</td><td>0.018%</td></tr><tr><td>#of Overlap Ratio(Book)</td><td>-</td><td>49.05%</td><td>85.37%</td></tr><tr><td>#of Overlap Ratio(Movie)</td><td>49.05%</td><td>-</td><td>41.88%</td></tr><tr><td>#of Overlap Ratio(Music)</td><td>85.37%</td><td>41.88%</td><td>-</td></tr></table>
+
+where \( U \) is the set of behavior relations, \( \omega \) is the behavior weights obtained through the DAC method in the multi-behavior competition. To prevent over-fitting, \( {L}_{2} \) regularization [49] is performed on \( \Theta \) , where \( \Theta \) represents all trainable model parameters. The experimental section that follows will contain the relevent parameters and settings.
+
+## V. EXPERIMENTS
+
+In this section, we carry out in-depth experiments to evaluate our model GCTN for answering the three questions:
+
+- RQ1: How does the GCTN model perform in various combinations of the source and target domains compared to baseline methods?
+
+- RQ2: How does the GCTN model gain form behavior competition and domain competition? Which type of competition is more crucial?
+
+- RQ3: How does varying the number of layers impact the performance of the GCTN model?
+
+- RQ4: How does the proportion of data overlap affect the performance of the GCTN model?
+
+- RQ5: How does the model efficiency of GCTN perform?
+
+## A. Experimental Settings
+
+1) Datasets: Douban is a well-known social networking platform with rich user-generated content and data in multiple domains, and Amazon is a popular e-commerce platform. In this study, Douban's datasets of three domains, Douban-book, Douban-Movie and Douban-music [50], are adopted. Amazon's datasets [51] of two domains, Amazon-CD and Amazon-Movie, are adopted. We categorize behavior based on user ratings of items. Three behaviors are categorized using a scoring system that runs from 1 to 5, i.e.,(1) \( {r}_{i, j} = 1,2 \) , dislike; (2) \( {r}_{i, j} = 3 \) , neutral; (3) \( {r}_{i, j} = 4,5 \) , like. What’s more, the overlap ratios between each pair of the three domains have also been calculated. Knowledge is transferred through overlapping users, but the evaluation is conducted for all users. Tables I and II display the summary statistics for the datasets Douban-book, Douban-movie, Douba-music, Amazon-CD and Amazon-Movie.
+
+TABLE II
+
+STATISTICS OF THE AMAZON-CD, AMAZON-MOVIE
+
+<table><tr><td>Dataset</td><td>Amazon-CD</td><td>Amazon-Movie</td></tr><tr><td>#of Users</td><td>1,944,316</td><td>3,826,085</td></tr><tr><td>#of Items</td><td>434,060</td><td>182,032</td></tr><tr><td>#of Like Behaviors</td><td>3,966,745</td><td>6,989,633</td></tr><tr><td>#of Neutral Behaviors</td><td>277,854</td><td>735,907</td></tr><tr><td>#of Dislike Behaviors</td><td>298,770</td><td>1,040,028</td></tr><tr><td>#of Overall interactions</td><td>4,543,369</td><td>8,765,568</td></tr><tr><td>#of Average interactions</td><td>2.34</td><td>2.29</td></tr><tr><td>#of User-Item Density</td><td>0.0005%</td><td>0.0013%</td></tr><tr><td>#of Overlap Ratio(Movie)</td><td>50.81%</td><td>-</td></tr><tr><td>#of Overlap Ratio(CD)</td><td>-</td><td>50.81%</td></tr></table>
+
+2) Evaluation Metrics: To evaluate the effect of GCTN model, AUC [52] and F1 [53] are used in this work. AUC measures the area under the Receiver Operating Characteristic curve and represents the model's ability to distinguish between positive and negative instances. F1 is a comprehensive evaluation metric derived from Precision and Recall [53]. These metrics can be used to show the predictive performance on different behaviors. For example, the metrics of behavior like are defined as AUC-like and F1-like. We will calculate the aforementioned metrics on each type behavior.
+
+Furthermore, to assess the general effectiveness of the model based on multi-behaviors, AUC-WS (AUC-Weight Sum) and \( {F1} - {WS} \) ( \( {F1} \) - Weight Sum) are also used which are defined as:
+
+\[
+{AUC} - {WS} = \mathop{\sum }\limits_{{k = 1}}^{K}{\omega }_{k} \cdot  {AUC} - k, \tag{23}
+\]
+
+\[
+{F1} - {WS} = \mathop{\sum }\limits_{{k = 1}}^{K}{\omega }_{k} \cdot  {F1} - k \tag{24}
+\]
+
+where \( {\omega }_{k} \) indicates the weight of the \( k \) th behavior ( \( {\omega }_{k} \) is learnt by the behavior competition) and \( K \) is the number of behavior types. The \( {AUC} \) score and \( {F1} \) score of the \( k \) th behavior are denoted by the expressions \( {AUC} - k \) and \( {F1} - k \) .
+
+3) Baselines: The baselines consist of multiple models. The MLP [44] is a neural network with multiple layers of nodes that interconnect. The R-GCN [54] employs distinct parameter matrices for different edge types and shares node representations across these to model diverse connections. The Graph-SAGE [11] samples the original graph to form a subgraph and updates the embedding of each node by aggregating features from its neighbors. The GAT [12] applies attention mechanism in GNNs to leverage neighbor relationships and feature information. The GIN [55] processes aggregated neighbor node features through a nonlinear MLP, allowing it to encode all node embeddings into a global feature. The HGT [45] models heterogeneous graphs by mapping each node and edge type into independent vector spaces and calculating attention weights within these spaces. The MB-CGCN [28] is a recommendation model using cascading graph convolutions that sequentially learns embeddings via capturing behavioral dependencies. The CDAF [56] is designed for estimating customer lifetime in online ads by learning cross-domain consumption data, and is adapted here for multi-behavior prediction.
+
+TABLE III
+
+MODEL PERFORMANCE EVALUATED BY AUC AND F1 ON DATASET DOUBAN-BOOK
+
+<table><tr><td rowspan="2">Model</td><td colspan="4">AUC Score</td><td colspan="4">F1 Score</td></tr><tr><td>AUC-like</td><td>AUC-neutral</td><td>AUC-dislike</td><td>AUC-WS</td><td>F1-like</td><td>F1-neutral</td><td>F1-dislike</td><td>F1-WS</td></tr><tr><td>MLP</td><td>0.8099</td><td>0.8654</td><td>0.9257</td><td>0.8671</td><td>0.6714</td><td>0.6991</td><td>0.7992</td><td>0.7232</td></tr><tr><td>R-GCN</td><td>0.7579</td><td>0.8332</td><td>0.9351</td><td>0.8421</td><td>0.5949</td><td>0.6708</td><td>0.8204</td><td>0.6953</td></tr><tr><td>GraphSAGE</td><td>0.8988</td><td>0.9178</td><td>0.9339</td><td>0.9168</td><td>0.7782</td><td>0.7825</td><td>0.7932</td><td>0.7846</td></tr><tr><td>GIN</td><td>0.8093</td><td>0.9143</td><td>0.9384</td><td>0.8873</td><td>0.6592</td><td>0.7617</td><td>0.7804</td><td>0.7311</td></tr><tr><td>GAT</td><td>0.8994</td><td>0.9244</td><td>0.9449</td><td>0.9271</td><td>0.7643</td><td>0.7704</td><td>0.8161</td><td>0.7868</td></tr><tr><td>HGT</td><td>0.8425</td><td>0.8952</td><td>0.9443</td><td>0.8941</td><td>0.7078</td><td>0.7377</td><td>0.8267</td><td>0.7574</td></tr><tr><td>MB-CGCN</td><td>0.8887</td><td>0.7157</td><td>0.7571</td><td>0.7803</td><td>0.0233</td><td>0.0112</td><td>0.0083</td><td>0.0141</td></tr><tr><td>CDAF(movie)</td><td>0.8006</td><td>0.8391</td><td>0.9078</td><td>0.8491</td><td>0.6471</td><td>0.6738</td><td>0.7687</td><td>0.6965</td></tr><tr><td>CDAF(music)</td><td>0.8348</td><td>0.8758</td><td>0.9196</td><td>0.8767</td><td>0.6848</td><td>0.7031</td><td>0.7864</td><td>0.7248</td></tr><tr><td>GCTN(movie)</td><td>0.9272</td><td>0.9344</td><td>0.9567</td><td>0.9394</td><td>0.7892</td><td>0.7875</td><td>0.8667</td><td>0.8134</td></tr><tr><td>GCTN(music)</td><td>0.9321</td><td>0.9389</td><td>0.9634</td><td>0.9443</td><td>0.7938</td><td>0.7897</td><td>0.8681</td><td>0.8161</td></tr><tr><td>Improv.</td><td>+3.64%</td><td>+1.57%</td><td>+1.96%</td><td>+1.86%</td><td>+2.00%</td><td>+0.92%</td><td>+5.01%</td><td>+3.72%</td></tr></table>
+
+The performance of all behaviors is shown in the table. \( {AUC} - {WS} \) and \( {F1} - {WS} \) are comprehensive performance metrics.
+
+TABLE IV
+
+MODEL PERFORMANCE EVALUATED BY AUC AND F1 ON DATASET DOUBAN-MOVIE
+
+<table><tr><td rowspan="2">Model</td><td colspan="4">AUC Score</td><td colspan="4">\( {F1} \) Score</td></tr><tr><td>AUC-like</td><td>AUC-neutral</td><td>AUC-dislike</td><td>AUC-WS</td><td>F1-like</td><td>F1-neutral</td><td>F1-dislike</td><td>F1-WS</td></tr><tr><td>MLP</td><td>0.8726</td><td>0.8806</td><td>0.8983</td><td>0.8838</td><td>0.7391</td><td>0.7438</td><td>0.7526</td><td>0.7451</td></tr><tr><td>R-GCN</td><td>0.8568</td><td>0.8626</td><td>0.8844</td><td>0.8679</td><td>0.7264</td><td>0.7439</td><td>0.7596</td><td>0.7433</td></tr><tr><td>GraphSAGE</td><td>0.9217</td><td>0.9333</td><td>0.9403</td><td>0.9317</td><td>0.7979</td><td>0.8115</td><td>0.8073</td><td>0.8056</td></tr><tr><td>GIN</td><td>0.7026</td><td>0.8511</td><td>0.8633</td><td>0.8061</td><td>0.5683</td><td>0.7035</td><td>0.7213</td><td>0.6645</td></tr><tr><td>GAT</td><td>0.9551</td><td>0.9555</td><td>0.9526</td><td>0.9552</td><td>0.8422</td><td>0.8396</td><td>0.8301</td><td>0.8373</td></tr><tr><td>HGT</td><td>0.9343</td><td>0.9467</td><td>0.9518</td><td>0.9442</td><td>0.8122</td><td>0.8279</td><td>0.8328</td><td>0.8243</td></tr><tr><td>MB-CGCN</td><td>0.9690</td><td>0.9601</td><td>0.9413</td><td>0.9567</td><td>0.0589</td><td>0.0174</td><td>0.0129</td><td>0.0297</td></tr><tr><td>CDAF(book)</td><td>0.7747</td><td>0.7834</td><td>0.8312</td><td>0.7964</td><td>0.5654</td><td>0.5611</td><td>0.6031</td><td>0.5765</td></tr><tr><td>CDAF(music)</td><td>0.8373</td><td>0.8383</td><td>0.8701</td><td>0.8485</td><td>0.6177</td><td>0.6138</td><td>0.6633</td><td>0.6316</td></tr><tr><td>GCTN(book)</td><td>0.9615</td><td>0.9595</td><td>0.9549</td><td>0.9592</td><td>0.8603</td><td>0.8544</td><td>0.8394</td><td>0.8522</td></tr><tr><td>GCTN(music)</td><td>0.9601</td><td>0.9578</td><td>0.9573</td><td>0.9584</td><td>0.8576</td><td>0.8496</td><td>0.8485</td><td>0.8518</td></tr><tr><td>Improv.</td><td>-0.77%</td><td>-0.06%</td><td>+0.49%</td><td>+0.26%</td><td>+2.15%</td><td>+1.76%</td><td>+1.89%</td><td>+1.78%</td></tr></table>
+
+The performance of all behaviors is shown in the table. \( {AUC} - {WS} \) and \( {F1} - {WS} \) are comprehensive performance metrics.
+
+TABLE V
+
+MODEL PERFORMANCE EVALUATED BY AUC AND F1 ON DATASET DOUBAN-MUSIC
+
+<table><tr><td rowspan="2">Model</td><td colspan="4">AUC Score</td><td colspan="4">\( {F1} \) Score</td></tr><tr><td>AUC-like</td><td>AUC-neutral</td><td>AUC-dislike</td><td>AUC-WS</td><td>F1-like</td><td>F1-neutral</td><td>F1-dislike</td><td>F1-WS</td></tr><tr><td>MLP</td><td>0.7357</td><td>0.7368</td><td>0.8038</td><td>0.7621</td><td>0.5947</td><td>0.5941</td><td>0.6456</td><td>0.6115</td></tr><tr><td>R-GCN</td><td>0.7257</td><td>0.8151</td><td>0.9353</td><td>0.8253</td><td>0.5696</td><td>0.6618</td><td>0.8159</td><td>0.6823</td></tr><tr><td>GraphSAGE</td><td>0.8383</td><td>0.8716</td><td>0.9273</td><td>0.8791</td><td>0.6941</td><td>0.7104</td><td>0.8086</td><td>0.7377</td></tr><tr><td>GIN</td><td>0.7045</td><td>0.8767</td><td>0.9376</td><td>0.8396</td><td>0.5692</td><td>0.7059</td><td>0.7613</td><td>0.6788</td></tr><tr><td>GAT</td><td>0.8249</td><td>0.8861</td><td>0.9445</td><td>0.8851</td><td>0.7039</td><td>0.7091</td><td>0.8352</td><td>0.7494</td></tr><tr><td>HGT</td><td>0.8396</td><td>0.8891</td><td>0.9501</td><td>0.8929</td><td>0.6974</td><td>0.7292</td><td>0.8304</td><td>0.7523</td></tr><tr><td>MB-CGCN</td><td>0.8481</td><td>0.8999</td><td>0.7699</td><td>0.8407</td><td>0.0202</td><td>0.0119</td><td>0.0066</td><td>0.0136</td></tr><tr><td>CDAF(book)</td><td>0.7471</td><td>0.7705</td><td>0.8693</td><td>0.7956</td><td>0.5608</td><td>0.5794</td><td>0.6842</td><td>0.6081</td></tr><tr><td>CDAF(movie)</td><td>0.7767</td><td>0.8071</td><td>0.8836</td><td>0.8225</td><td>0.6104</td><td>0.6201</td><td>0.7436</td><td>0.6581</td></tr><tr><td>GCTN(book)</td><td>0.8834</td><td>0.8947</td><td>0.9574</td><td>0.9093</td><td>0.7255</td><td>0.7122</td><td>0.8478</td><td>0.7585</td></tr><tr><td>GCTN(movie)</td><td>0.8871</td><td>0.8861</td><td>0.9518</td><td>0.9066</td><td>0.7277</td><td>0.7116</td><td>0.8379</td><td>0.7542</td></tr><tr><td>Improv.</td><td>+4.60%</td><td>-0.58%</td><td>+0.77%</td><td>+1.84%</td><td>+3.38%</td><td>-2.33%</td><td>+1.51%</td><td>+0.82%</td></tr></table>
+
+The performance of all behaviors is shown in the table. \( {AUC} - {WS} \) and \( {F1} - {WS} \) are comprehensive performance metrics.
+
+4) Parameters Setting: We implemented the proposed model using PyTorch and DGL \( {}^{1} \) [57], where PyTorch is a neural network library, and DGL is an extension package with a focus on graph learning. For the performance comparison, we use 20% of the dataset as the testing set and 80% of the dataset as the training set. Experiments in this paper use Adam optimizer [58] with learning rate \( {lr} = {0.0001} \) . We chose 32 for the embedding dimension and 16 for the latent dimension. For each positive sample edge, we sample two random node pairs as negative samples. We repeat the training for 100 epochs until the model converges. To prevent over-fitting, the dropout rate is set to 0.5 , the weight decay is set to 1e-5, and L2 regularization [49] is employed. For the baseline algorithms, we fine-tuned to obtain the optimal performance.
+
+## B. Overall Performance (RQ1)
+
+We contrast our proposed method, GCTN, with all baseline algorithms. The experimental results on the Douban-book, Douban-movie, Douban-music, Amazon-CD and Amazon-Movie datasets are presented in Tables III, IV, V, VI, and VII, respectively. We evaluate the performance in terms of AUC and \( {F1} \) score. Due to space limitations, we only compare with R-GCN and CDAF on the Amazon-CD and Amazon-Movie datasets. Based on the comprehensive results presented in these Tables, we draw the following conclusions:
+
+---
+
+\( {}^{1} \) https://docs.dgl.ai/
+
+---
+
+TABLE VI
+
+MODEL PERFORMANCE EVALUATED BY AUC AND F1 ON DATASET AMAZON-CD
+
+<table><tr><td rowspan="2">Model</td><td colspan="4">AUC Score</td><td colspan="4">F1 Score</td></tr><tr><td>AUC-like</td><td>AUC-neutral</td><td>AUC-dislike</td><td>AUC-WS</td><td>F1-like</td><td>F1-neutral</td><td>F1-dislike</td><td>F1-WS</td></tr><tr><td>R-GCN</td><td>0.5861</td><td>0.6722</td><td>0.7034</td><td>0.6538</td><td>0.3147</td><td>0.3965</td><td>0.4252</td><td>0.3786</td></tr><tr><td>CDAF(movie)</td><td>0.8707</td><td>0.8424</td><td>0.8104</td><td>0.8411</td><td>0.6140</td><td>0.5981</td><td>0.5261</td><td>0.5793</td></tr><tr><td>GCTN(movie)</td><td>0.8927</td><td>0.9506</td><td>0.9574</td><td>0.9319</td><td>0.7366</td><td>0.8238</td><td>0.8292</td><td>0.7942</td></tr><tr><td>Improv.</td><td>+2.53%</td><td>+12.84%</td><td>+18.14%</td><td>+10.80%</td><td>+19.97%</td><td>+37.74%</td><td>+57.61%</td><td>+37.10%</td></tr></table>
+
+The performance of all behaviors is shown in the table. \( {AUC} - {WS} \) and \( {F1} - {WS} \) are comprehensive performance metrics.
+
+TABLE VII
+
+MODEL PERFORMANCE EVALUATED BY AUC AND F1 ON DATASET AMAZON-MOVIE
+
+<table><tr><td rowspan="2">Model</td><td colspan="4">AUC Score</td><td colspan="4">F1 Score</td></tr><tr><td>AUC-like</td><td>AUC-neutral</td><td>AUC-dislike</td><td>AUC-WS</td><td>F1-like</td><td>F1-neutral</td><td>F1-dislike</td><td>F1-WS</td></tr><tr><td>R-GCN</td><td>0.7960</td><td>0.7638</td><td>0.7499</td><td>0.7530</td><td>0.6113</td><td>0.5488</td><td>0.5068</td><td>0.5559</td></tr><tr><td>CDAF(cd)</td><td>0.7665</td><td>0.9054</td><td>0.8842</td><td>0.8520</td><td>0.5375</td><td>0.7425</td><td>0.6599</td><td>0.6466</td></tr><tr><td>GCTN(cd)</td><td>0.9480</td><td>0.9596</td><td>0.9527</td><td>0.9533</td><td>0.8238</td><td>0.8279</td><td>0.8239</td><td>0.8251</td></tr><tr><td>Improv.</td><td>+19.10%</td><td>+5.99%</td><td>+7.75%</td><td>+11.89%</td><td>+34.76%</td><td>+11.50%</td><td>+24.85%</td><td>+27.61%</td></tr></table>
+
+The performance of all behaviors is shown in the table. \( {AUC} - {WS} \) and \( {F1} - {WS} \) are comprehensive performance metrics.
+
+Our proposed GCTN model demonstrates superior performance compared to several state-of-the-art baselines in predicting multiple behaviors in heterogeneous information networks. Specifically, GCTN achieves the best AUC and F1 scores for most types of behaviors, indicating that our method better models the multi-behavior prediction problem. Furthermore, by leveraging cross-domain information, our model achieved even better performance. On the Douban-book dataset, GCTN surpasses the best baseline (GAT) with a 1.86% relative boost in \( {AUC} - {WS} \) and a \( {3.72}\% \) increase in \( {F1} - {WS} \) . Similarly, on the Douban-movie dataset, GCTN achieves a 0.26% AUC - \( {WS} \) improvement and a \( {1.78}\% {F1} - {WS} \) enhancement over the best baseline. Additionally, for the Douban-music dataset, GCTN exhibits a 1.84% rise in \( {AUC} - {WS} \) and a 0.82% gain in \( {F1} - {WS} \) compared to the best baseline (HGT). Similarly, on Amazon-CD and Amazon-Movie, GCTN outperformed the two comparison algorithms on all metrics. These results underscore the effectiveness of GCTN in capturing specific user-behavior-item relationships through the Multi-Behavior Graph (MBG) while leveraging cross-domain information.
+
+Compared with the CDAF baseline, GCTN achieves significant performance improvements on Douban-book, Douban-movie and Douban-music datasets. On the Douban-book dataset, GCTN exhibits impressive relative enhancements, achieving a remarkable 7.71% improvement in \( {AUC} - {WS} \) and a substantial 12.60% boost in \( {F1} - {WS} \) . Similarly, on the Douban-movie dataset, GCTN demonstrates significant relative improvements of 13.05% in \( {AUC} - {WS} \) and 34.93% in \( {F1} - {WS} \) . In the case of the Douban-music dataset, GCTN achieves notable relative improvements of 10.55% in \( {AUC} - {WS} \) and 15.26% in F1-WS. On the Amazon-CD and Amazon-Movie, our GCTN has also achieved significant improvements over CDAF in \( {AUC} - {WS} \) and \( {F1} - {WS} \) . CDAF did not take into account the differences in knowledge between different domains. Instead, it directly employed a cross-domain approach, leading to negative transfer issues, resulting in experimental performance that was inferior to that of other conventional models learning knowledge from individual domains. This experimental result also validates the effectiveness of the domain competition module proposed in GCTN. It also demonstrates that by overcoming domain negative transfer issues, the model can achieve better behavior prediction results.
+
+TABLE VIII THE METHODS IN ABLATION EXPERIMENTS
+
+<table><tr><td>Method</td><td>Behavior Competition</td><td>Domain Competition</td></tr><tr><td>GCTN-D-B</td><td></td><td></td></tr><tr><td>GCTN-B</td><td></td><td>✓</td></tr><tr><td>GCTN-D</td><td>✓</td><td></td></tr><tr><td>GCTN</td><td>✓</td><td>✓</td></tr></table>
+
+Compared with the R-GCN baseline, GCTN achieves significant performance improvements on Douban-book, Douban-movie and Douban-music datasets. GCTN combines different relationships to obtain a node representation, it does not simply pile up different connected node features. Unlike R-GCN, it uses an intelligent approach called behavioral competition. This means that it explores the meaning of different behaviors to ensure that it truly understands what is meaningful to users and items. On the Douban-book dataset, GCTN exhibits impressive relative enhancements, achieving a remarkable 12.14% improvement in AUC-WS and a substantial 17.37% boost in \( {F1} - {WS} \) . Similarly, on the Douban-movie dataset, GCTN demonstrates significant relative improvements of 10.52% in \( {AUC} - {WS} \) and 14.65% in \( {F1} - {WS} \) . In the case of the Douban-music dataset, GCTN performs notable relative improvements of 10.18% in \( {AUC} - {WS} \) and 11.17% in \( {F1} - {WS} \) . Similarly, on the Amazon-CD and Amazon-Movie, our GCTN also shows significant improvements over R-GCN in both aspects \( {AUC} - {WS} \) and \( {F1} - {WS} \) . These results underscore GCTN's efficacy in precisely capturing the influence of diverse relationships and integrating them into the final node embeddings, highlighting its substantial potential for addressing multi-relational tasks in heterogeneous information networks.
+
+## C. Ablation Study (RQ2)
+
+In order to analyze the effects of each competitive module, we conducted a series of ablation experiments to investigate how the two competition mechanisms influence the GCTN model. We present three variants of the GCTN model in Table VIII, each variant removing one or two competitive components. By combining the dataset from three domains as target and auxiliary domains, we conducted experiments and the results are shown in the Fig. 5. Based on the experimental findings, we draw the following conclusions:
+
+![10_149_182_656_827_0.jpg](images/10_149_182_656_827_0.jpg)
+
+Fig. 5. The results of competition ablation study on dataset Douban-Book, Douban-Movie and Douban-Music.
+
+a) Behavior competition: Removing the behavior competition module may prevent the model from effectively distinguishing the various behavioral relationships, which could lead to a decline in the model's predictive capability. Compared with the method GCTN-B, we conducted experiments by removing the behavior competition modules from the model and observed a certain degree of performance degradation. On the Douban-Book dataset, we noted a relative reduction of 0.28% in \( {AUC} \) and 0.95% in \( {F1} \) scores. Similarly, the Douban-Movie dataset exhibited a relative reduction of \( {0.19}\% \) in \( {AUC} \) and 0.39% in \( {F1} \) scores. In the case of the Douban-Music dataset, there was a relative reduction of \( {1.02}\% \) in \( {AUC} \) and 1.53% in \( {F1} \) scores. These results underscore the effectiveness of the behavior competition modules, suggesting a positive model enhancement by uncovering information discrepancies between behaviors.
+
+b) Domain competition: The domain competition helps the model understand the behavioral relationships and interactions between different domains. Removing it will lead to a decline in the model's generalization ability across various domains. Compared with the method GCTN-D, we removed the domain competition modules from the model and observed a extreme performance degradation, which was more severe compared to removing the behavior competition modules. On the Douban-Book dataset, we noticed a relative reduction of 2.74% in \( {AUC} \) and 5.36% in \( {F1} \) scores. Similarly, on the Douban-Movie dataset, there was a relative reduction of 1.78% in \( {AUC} \) and 1.51% in \( {F1} \) scores. In the case of the Douban-Music dataset, we observed a relative reduction of 1.88% in AUC and 4.29% in F1 scores. The experimental results highlight the effectiveness of domain competition, with domain competition outperforming behavior competition. This suggests that addressing information discrepancies between domains is more crucial than addressing discrepancies between behaviors.
+
+c) Dual competition: Compared with the method GCTN-D-B, when we removed all competitions, the model's performance experienced a significant decline. This decline was particularly evident in the Douban-book and Douban-music datasets. On the Douban-Book dataset, we noted a relative reduction of 7.19% in AUC and 5.61% in F1 scores. Similarly, on Douban-Movie, there was a relative reduction of 2.58% in AUC and 1.81% in \( {F1} \) scores. In Douban-Music, we observed a relative reduction of 14.89% in \( {AUC} \) and 11.52% in \( {F1} \) scores. This could be attributed to the conflicting information between domains and behaviors when all competition information was lost, resulting in a compounded detrimental effect on the model's performance.
+
+## D. Layer Number Study (RQ3)
+
+To determine the impact of the number of layers on GCTN, we vary the depth of the model. We conducted experiments using different numbers of layers, ranging from 1 to 4 . The results are presented in Table IX, where GCTN \( - k \) denotes the GCTN model with \( k \) layers of graph convolutional neural modules, and GCTN(book/movie/music) represents the information introduced into the book/movie/music auxiliary domain. Based on the analysis of Table IX, we draw the following conclusions:
+
+Increasing the depth of the GCTN model can significantly enhance its ability to predict behavior. Specifically, GCTN-2 demonstrates a remarkable performance improvement compared to GCTN-1 in all behaviors. This improvement can be attributed to the inclusion of high-order behavioral knowledge, which is captured by considering relationships beyond just first-order neighbors. Therefore, in our experiments, \( k \) is set as 2.
+
+By continuing to stack graph convolution network layer modules on top of GCTN-2, we observed the emergence of overfit-ting in the source domain Douban-Book and Douban-Movie. This suggests that an excessively deep structure may introduce noise into the representation learning process. However, the source domain Douban-Music requires a deeper layer to mine behavioral information due to less data. Our experimental results demonstrate that our GCTN model, with its high-order behavior GCN module structure, outperforms other methods in terms of comprehensive metrics \( {AUC} - {WS} \) and \( {F1} - {WS} \) , as well as other behavior metrics. This further confirms the validity of the proposed GCTN model and emphasizes the importance of moderately higher-order heterogeneous behavioral modeling for improving prediction performance.
+
+TABLE IX
+
+EFFECTS OF MODEL DEPTH IN TERMS OF AUC AND F1 ON DATASET DOUBAN-BOOK, DOUBAN-MOVIE AND DOUBAN-MUSIC
+
+<table><tr><td colspan="2" rowspan="2">Source Domain</td><td colspan="4">AUC Score</td><td colspan="4">\( {F1} \) Score</td></tr><tr><td>AUC-like</td><td>AUC-neutral</td><td>AUC-dislike</td><td>AUC-WS</td><td>F1-like</td><td>F1-neutral</td><td>F1-dislike</td><td>F1-WS</td></tr><tr><td rowspan="8">Book</td><td>GCTN(movie)-1</td><td>0.8259</td><td>0.8878</td><td>0.9393</td><td>0.8816</td><td>0.6934</td><td>0.7196</td><td>0.8336</td><td>0.7453</td></tr><tr><td>GCTN(movie)-2</td><td>0.9272</td><td>0.9344</td><td>0.9567</td><td>0.9394</td><td>0.7892</td><td>0.7875</td><td>0.8667</td><td>0.8134</td></tr><tr><td>GCTN(movie)-3</td><td>0.9086</td><td>0.9165</td><td>0.9476</td><td>0.9237</td><td>0.7632</td><td>0.7654</td><td>0.8302</td><td>0.7849</td></tr><tr><td>GCTN(movie)-4</td><td>0.9177</td><td>0.9302</td><td>0.9481</td><td>0.9317</td><td>0.7834</td><td>0.7893</td><td>0.8173</td><td>0.7963</td></tr><tr><td>GCTN(music)-1</td><td>0.8335</td><td>0.8793</td><td>0.9335</td><td>0.8785</td><td>0.6937</td><td>0.7212</td><td>0.8237</td><td>0.7435</td></tr><tr><td>GCTN(music)-2</td><td>0.9123</td><td>0.9263</td><td>0.9550</td><td>0.9307</td><td>0.7743</td><td>0.7693</td><td>0.8325</td><td>0.7912</td></tr><tr><td>GCTN(music)-3</td><td>0.9092</td><td>0.9220</td><td>0.9564</td><td>0.9286</td><td>0.7773</td><td>0.7778</td><td>0.8439</td><td>0.7986</td></tr><tr><td>GCTN(music)-4</td><td>0.9055</td><td>0.9248</td><td>0.9653</td><td>0.9308</td><td>0.7808</td><td>0.7744</td><td>0.8642</td><td>0.8047</td></tr><tr><td rowspan="8">Moive</td><td>GCTN(book)-1</td><td>0.8438</td><td>0.8365</td><td>0.8695</td><td>0.8497</td><td>0.6971</td><td>0.6888</td><td>0.7390</td><td>0.7080</td></tr><tr><td>GCTN(book)-2</td><td>0.9357</td><td>0.9262</td><td>0.9155</td><td>0.9256</td><td>0.8462</td><td>0.8319</td><td>0.8245</td><td>0.8341</td></tr><tr><td>GCTN(book)-3</td><td>0.9189</td><td>0.9084</td><td>0.8971</td><td>0.9079</td><td>0.8301</td><td>0.8103</td><td>0.8208</td><td>0.8146</td></tr><tr><td>GCTN(book)-4</td><td>0.9317</td><td>0.9149</td><td>0.8901</td><td>0.9179</td><td>0.8439</td><td>0.8236</td><td>0.8078</td><td>0.8247</td></tr><tr><td>GCTN(music)-1</td><td>0.7831</td><td>0.7441</td><td>0.7752</td><td>0.7674</td><td>0.6459</td><td>0.5891</td><td>0.6378</td><td>0.6241</td></tr><tr><td>GCTN(music)-2</td><td>0.9228</td><td>0.8998</td><td>0.8917</td><td>0.9045</td><td>0.8399</td><td>0.8150</td><td>0.8050</td><td>0.8178</td></tr><tr><td>GCTN(music)-3</td><td>0.9022</td><td>0.8790</td><td>0.8673</td><td>0.8822</td><td>0.8134</td><td>0.7848</td><td>0.7575</td><td>0.7843</td></tr><tr><td>GCTN(music)-4</td><td>0.9217</td><td>0.8905</td><td>0.9028</td><td>0.9051</td><td>0.8422</td><td>0.8141</td><td>0.8247</td><td>0.8271</td></tr><tr><td rowspan="8">Music</td><td>GCTN(book)-1</td><td>0.7958</td><td>0.8213</td><td>0.9237</td><td>0.8430</td><td>0.6609</td><td>0.6746</td><td>0.8304</td><td>0.7084</td></tr><tr><td>GCTN(book)-2</td><td>0.8827</td><td>0.8911</td><td>0.9635</td><td>0.9101</td><td>0.7266</td><td>0.7047</td><td>0.8661</td><td>0.7613</td></tr><tr><td>GCTN(book)-3</td><td>0.8804</td><td>0.8962</td><td>0.9555</td><td>0.9087</td><td>0.7352</td><td>0.7262</td><td>0.8604</td><td>0.7802</td></tr><tr><td>GCTN(book)-4</td><td>0.8750</td><td>0.9087</td><td>0.9691</td><td>0.9146</td><td>0.7347</td><td>0.7232</td><td>0.8922</td><td>0.7774</td></tr><tr><td>GCTN(movie)-1</td><td>0.7992</td><td>0.8228</td><td>0.9202</td><td>0.8441</td><td>0.6562</td><td>0.6649</td><td>0.7945</td><td>0.7011</td></tr><tr><td>GCTN(movie)-2</td><td>0.8822</td><td>0.8892</td><td>0.9605</td><td>0.9084</td><td>0.7272</td><td>0.7097</td><td>0.8436</td><td>0.7565</td></tr><tr><td>GCTN(movie)-3</td><td>0.8839</td><td>0.8954</td><td>0.9731</td><td>0.9141</td><td>0.7334</td><td>0.7389</td><td>0.8973</td><td>0.7835</td></tr><tr><td>GCTN(movie)-4</td><td>0.8800</td><td>0.8986</td><td>0.9686</td><td>0.9128</td><td>0.7339</td><td>0.7291</td><td>0.8825</td><td>0.7763</td></tr></table>
+
+The performance of all behaviors is shown in the table. \( {AUC} - {WS} \) and \( {F1} - {WS} \) are comprehensive performance metrics.
+
+TABLE X
+
+STATISTICS OF THE EFFICIENCY BETWEEN THE DOMAINS WITH THE IMPROVEMENTS WITH EVERY 10% OVERLAP
+
+<table><tr><td>Target Domain</td><td>Douban-Book</td><td>Douban-Movie</td><td>Douban-Music</td></tr><tr><td>WS-AUC uplift (Book)</td><td>-</td><td>+0.08%</td><td>+0.21%</td></tr><tr><td>WS-AUC uplift(Movie)</td><td>+0.26%</td><td>-</td><td>+0.36%</td></tr><tr><td>WS-AUC uplift(Music)</td><td>+0.21%</td><td>+0.08%</td><td>-</td></tr><tr><td>WS-F1 uplift (Book)</td><td>-</td><td>+0.35%</td><td>+0.09%</td></tr><tr><td>WS-F1 uplift(Movie)</td><td>+0.66%</td><td>-</td><td>+0.06%</td></tr><tr><td>WS-F1 uplift(Music)</td><td>+0.42%</td><td>+0.41%</td><td>-</td></tr></table>
+
+## E. Proportion of Data Overlap Study (RQ4)
+
+We recognize that users' overlap between different domains can have a significant impact on model performance. Specifically, the proportion of overlapping users may affect the model's generalization ability and prediction accuracy across various domains. In our analysis, we found that the higher the proportion of overlapping users, the greater the improvement in the model's performance. Specifically, we observed that in Table I, the overlapping user proportion for Douban-Book and Douban-Music is the highest, and in Table III, we can also see that the performance improvement relative to the next-best algorithm is the largest.
+
+To further explore the impact of overlap data between different domains on performance, we calculated the efficiency between the domains with the improvements. We measured the performance increasement between domains and calculated the metric gain associated with every 10% overlap. The details can be found in Table X.
+
+In the table above, the top row represents the target domains, the left side represents the improvements brought by introducing data from various source domains, i.e., the efficiency gains calculated based on every \( {10}\% \) overlap ratio. It can be observed that the largest improvements come from introducing information from the movie domain into the music domain and from the movie domain into the book domain, which aligns with our expectations. The information in these two domains is relatively sparse, and by incorporating the more information-rich movie domain, we can achieve greater information gains. We also find that although the movie domain receives relatively little information from other domains, it can still contribute to a certain degree of improvement in the model's performance. These experimental results validate that our domain competition mechanism is more pronounced in sparse scenarios.
+
+TABLE XI
+
+STATISTICS OF THE TIME EFFICIENCY
+
+<table><tr><td>Domain</td><td>Douban-Book</td><td>Douban-Movie</td><td>Douban-Music</td></tr><tr><td>GCTN(book)</td><td>-</td><td>5719.13</td><td>3153.38</td></tr><tr><td>CDAF(book)</td><td>-</td><td>10940.88</td><td>4110.91</td></tr><tr><td>GCTN(Movie)</td><td>7883.9</td><td>-</td><td>7026.15</td></tr><tr><td>CDAF(Movie)</td><td>9857.15</td><td>-</td><td>9714.53</td></tr><tr><td>GCTN(Music)</td><td>2329.78</td><td>5178.86</td><td>-</td></tr><tr><td>CDAF(Music)</td><td>4072.08</td><td>9838.31</td><td>-</td></tr></table>
+
+## F. Model Efficiency Study (RQ5)
+
+In this section, we studied and analyzed the efficiency of the model. In Table XI, we show the running cost of the GCTN model compared to the cross-domain model CDAF on the datasets Douban-Book, Douban-Moive and Douban-Music. In our experiment, all models were implemented using the DGL library and tested in a single hardware environment (CPU i7- 10700 + GPU RTX 3080(10 GB)).
+
+The results show that our method is faster and has lower time complexity than CDAF on the three datasets. We achieve competitive time-consuming algorithms compared with the baseline, and the proposed GCTN outperforms it in terms of the AUC and F1 metrics. This observation indicates that the GCTN model has a specific good efficiency.
+
+## VI. CONCLUSION AND FUTURE WORK
+
+In this work, we aim to enhance multi-behavior prediction by efficiently leveraging both multi-behavior and cross-domain information through a novel competition framework. It facilitates effective mining of user interests and behavior patterns while enabling knowledge transfer between domains. Our proposed model, the Graph Competitive Transfer Network (GCTN), integrates GNN modules with multi-behavior and cross-domain information, achieving superior performance on AUC and F1 metrics across various datasets. Furthermore, additional analyses confirm the significance of multi-behavior and cross-domain information in GCTN. However, it is important to acknowledge the limitations of our model. Specifically, GCTN may face challenges when applied to smaller datasets, where the scarcity of data can hinder the model's ability to learn robust representations and capture complex behavior patterns.
+
+In the future, we will further explore the multi-behavior relationships between different domains. Not only using competitive mechanisms, but also through collaboration, domain adaptation approaches to obtain further behavior prediction performance enhancement. In terms of domain adaptation, we can develop domain adaptation modules that enable the model to quickly adapt to the semantics of different domains based on specific domain features. In addition, users' behavior preferences and domain preferences are always subject to change over time, and we will consider introducing dynamic graphs so that the model can adapt to the temporal changes and dynamic relationships in the data for improving real-time behavior prediction. It will introduce time-related features and signals, and utilize Graph Neural Networks to dynamically capture the temporal relationships between nodes.
+
+## REFERENCES
+
+[1] A. I. Schein, A. Popescul, L. H. Ungar, and D. M. Pennock, "Methods and metrics for cold-start recommendations," in Proc. 25th Annu. Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2002, pp. 253-260.
+
+[2] F. Xiao et al., "DMBGN: Deep multi-behavior graph networks for voucher redemption rate prediction," in Proc. 27th ACM SIGKDD Conf. Knowl. Discov. Data Mining, 2021, pp. 3786-3794.
+
+[3] C. Zhao, H. Zhao, M. He, J. Zhang, and J. Fan, "Cross-domain recommendation via user interest alignment," in Proc. ACM Web Conf., 2023, pp. 887-896.
+
+[4] L. Xia, C. Huang, Y. Xu, P. Dai, B. Zhang, and L. Bo, "Multiplex behavioral relation learning for recommendation via memory augmented transformer network," in Proc. 43 rd Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2020, pp. 2397-2406.
+
+[5] W. Wang et al., "Beyond clicks: Modeling multi-relational item graph for session-based target behavior prediction," in Proc. Web Conf., 2020, pp. 3056-3062.
+
+[6] H. Li, Y. Liu, N. Mamoulis, and D. S. Rosenblum, "Translation-based sequential recommendation for complex users on sparse data," IEEE Trans. Knowl. Data Eng., vol. 32, no. 8, pp. 1639-1651, Aug. 2019.
+
+[7] C. Feng, J. Liang, P. Song, and Z. Wang, "A fusion collaborative filtering method for sparse data in recommender systems," Inf. Sci., vol. 521, pp. 365-379, 2020.
+
+[8] P. Li and A. Tuzhilin, "Dual metric learning for effective and efficient cross-domain recommendations," IEEE Trans. Knowl. Data Eng., vol. 35, no. 1, pp. 321-334, Jan. 2021.
+
+[9] A. Grover and J. Leskovec, "node2vec: Scalable feature learning for networks," in Proc. 22nd ACM SIGKDD Int. Conf. Knowl. Discov. Data Mining, 2016, pp. 855-864.
+
+[10] B. Perozzi, R. Al-Rfou, and S. Skiena, "Deepwalk: Online learning of social representations," in Proc. 20th ACM SIGKDD Int. Conf. Knowl. Discov. Data Mining, 2014, pp. 701-710.
+
+[11] W. L. Hamilton, Z. Ying, and J. Leskovec, "Inductive representation learning on large graphs," in Proc. Annu. Conf. Neural Inf. Process. Syst.2017, pp. 1024-1034.
+
+[12] P. Velickovic, G. Cucurull, A. Casanova, A. Romero, P. Liò, and Y. Bengio, "Graph attention networks," in Proc. 6th Int. Conf. Learn. Representations (Poster), 2018.
+
+[13] Y. Pang, Y. Zhao, and D. Li, "Graph pooling via coarsened graph infomax," in Proc. 44th Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2021, pp. 2177-2181.
+
+[14] X. Wang, X. He, M. Wang, F. Feng, and T. Chua, "Neural graph collaborative filtering," in Proc. 42nd Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2019, pp. 165-174.
+
+[15] X. Wang, X. He, Y. Cao, M. Liu, and T. Chua, "KGAT: Knowledge graph attention network for recommendation," in Proc. 25th ACM SIGKDD Int. Conf. Knowl. Discov. Data Mining, 2019, pp. 950-958.
+
+[16] Y. Xian, Z. Fu, S. Muthukrishnan, G. de Melo, and Y. Zhang, "Reinforcement knowledge graph reasoning for explainable recommendation," in Proc. 42nd Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2019, pp. 285-294.
+
+[17] Z. Li, Z. Cui, S. Wu, X. Zhang, and L. Wang, "Fi-GNN: Modeling feature interactions via graph neural networks for CTR prediction," in Proc. 28th ACM Int. Conf. Inf. Knowl. Manage., 2019, pp. 539-548.
+
+[18] Y. Su, R. Zhang, S. M. Erfani, and Z. Xu, "Detecting beneficial feature interactions for recommender systems," in Proc. 35th AAAI Conf. Artif. Intell., 2021, pp. 4357-4365.
+
+[19] X. Xin, X. He, Y. Zhang, Y. Zhang, and J. Jose, "Relational collaborative filtering: Modeling multiple item relations for recommendation," in Proc. 42nd Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2019, pp. 125-134.
+
+[20] Z. Zhao, Z. Cheng, L. Hong, and E. H. Chi, "Improving user topic interest profiles by behavior factorization," in Proc. 24th Int. Conf. World Wide Web, 2015, pp. 1406-1416.
+
+[21] B. Jin, C. Gao, X. He, D. Jin, and Y. Li, "Multi-behavior recommendation with graph convolutional networks," in Proc. 43rd Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2020, pp. 659-668.
+
+[22] L. Xia, Y. Xu, C. Huang, P. Dai, and L. Bo, "Graph meta network for multi-behavior recommendation," in Proc. 44th Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2021, pp. 757-766.
+
+[23] W. Wei, C. Huang, L. Xia, Y. Xu, J. Zhao, and D. Yin, "Contrastive meta learning with behavior multiplicity for recommendation," in Proc. 15th ACM Int. Conf. Web Search Data Mining, 2022, pp. 1120-1128.
+
+[24] L. Zhang, W. Zhang, L. Wu, M. He, and H. Zhao, "Shgen: Socially enhanced heterogeneous graph convolutional network for multi-behavior prediction," ACM Trans. Web, vol. 18, no. 1, pp. 1-27, 2023.
+
+[25] Y. Wei, H. Ma, Y. Wang, Z. Li, and L. Chang, "Multi-behavior recommendation with two-level graph attentional networks," in Proc. Database Syst. Adv. Appl. 27th Int. Conf., 2022, pp. 248-255.
+
+[26] L. Xia, C. Huang, Y. Xu, P. Dai, M. Lu, and L. Bo, "Multi-behavior enhanced recommendation with cross-interaction collaborative relation modeling," in Proc. IEEE 37th Int. Conf. Data Eng., Chania, Greece, 2021, pp. 1931-1936.
+
+[27] L. Xia et al., "Knowledge-enhanced hierarchical graph transformer network for multi-behavior recommendation," in the Proc. 35th AAAI Conf. Artif. Intell., 2021, pp. 4486-4493.
+
+[28] Z. Cheng, S. Han, F. Liu, L. Zhu, Z. Gao, and Y. Peng, "Multi-behavior recommendation with cascading graph convolution networks," in Proc. ACM Web Conf., 2023, pp. 1181-1189.
+
+[29] C. Meng et al., "Coarse-to-fine knowledge-enhanced multi-interest learning framework for multi-behavior recommendation," ACM Trans. Inf. Syst., vol. 42, no. 1, pp. 30:1-30:27, 2024.
+
+[30] C. Meng, C. Zhai, Y. Yang, H. Zhang, and X. Li, "Parallel knowledge enhancement based framework for multi-behavior recommendation," in Proc. 32nd ACM Int. Conf. Inf. Knowl. Manage., 2023, pp. 1797-1806.
+
+[31] Z. Cheng, J. Dong, F. Liu, L. Zhu, X. Yang, and M. Wang, "Disentangled cascaded graph convolution networks for multi-behavior recommendation," Trans. Recomm. Syst., vol. 2, no. 4, pp. 31:1-31: 27, 2024.
+
+[32] L. Chen, F. Yuan, J. Yang, X. He, C. Li, and M. Yang, "User-specific adaptive fine-tuning for cross-domain recommendations," IEEE Trans. Knowl. Data Eng., vol. 35, no. 3, pp. 3239-3252, Mar. 2023.
+
+[33] C. Zhao, H. Zhao, X. Li, M. He, J. Wang, and J. Fan, "Cross-domain recommendation via progressive structural alignment," IEEE Trans. Knowl. Data Eng., vol. 36, no. 6, pp. 2401-2415, Jun. 2023.
+
+[34] J. Jiang, H. Zhao, M. He, L. Wu, K. Zhang, and J. Fan, "Knowledge-aware cross-semantic alignment for domain-level zero-shot recommendation," in Proc. 32nd ACM Int. Conf. Inf. Knowl. Manage., 2023, pp. 965-975.
+
+[35] C. Zhao, X. Li, M. He, H. Zhao, and J. Fan, "Sequential recommendation via an adaptive cross-domain knowledge decomposition," in Proc. 32nd ACM Int. Conf. Inf. Knowl. Manage., 2023, pp. 3453-3463.
+
+[36] G. Fan, C. Zhang, K. Wang, and J. Chen, "MV-HAN: A hybrid attentive networks based multi-view learning model for large-scale contents recommendation," in Proc. 37th IEEE/ACM Int. Conf. Automated Softw. Eng., 2022, pp. 1-5.
+
+[37] K. Xia, H. Yin, Y. Jin, S. Qiu, and H. Zhao, "Cross-domain brain ct image smart segmentation via shared hidden space transfer FCM clustering," ACM Trans. Multimedia Comput., Commun., Appl., vol. 16, no. 2 s, pp. 1-21, 2020.
+
+[38] B. Wang et al., "Exploring the limits of domain-adaptive training for detoxifying large-scale language models," 2022, arXiv:2202.04173.
+
+[39] Q. Zhang, X. Wu, Q. Yang, C. Zhang, and X. Zhang, "Few-shot heterogeneous graph learning via cross-domain knowledge transfer," in Proc. 28th ACM SIGKDD Conf. Knowl. Discov. Data Mining, 2022, pp. 2450-2460.
+
+[40] A. Krishnan, M. Das, M. Bendre, H. Yang, and H. Sundaram, "Transfer learning via contextual invariants for one-to-many cross-domain recommendation," in Proc. 43 rd Int. ACM SIGIR Conf. Res. Develop. Inf. Retrieval, 2020, pp. 1081-1090.
+
+[41] C. Wang, Y. Liang, Z. Liu, T. Zhang, and S. Y. Philip, "Pre-training graph neural network for cross domain recommendation," in Proc. IEEE 3rd Int. Conf. Cogn. Mach. Intell., 2021, pp. 140-145.
+
+[42] L. Holmberg, P. Davidsson, and P. Linde, "Mapping knowledge representations to concepts: A review and new perspectives," 2022, arXiv:2301.00189.
+
+[43] Y. Zhang, Z. Cheng, F. Liu, X. Yang, and Y. Peng, "Decoupled domain-specific and domain-conditional representation learning for cross-domain recommendation," Inf. Process. Manag., vol. 61, no. 2, 2024, Art. no. 103689.
+
+[44] D. E. Rumelhart, G. E. Hinton, and R. J. Williams, "Learning representations by back propagating errors," Nature, vol. 323, no. 6088, pp. 533-536, 1986.
+
+[45] Z. Hu, Y. Dong, K. Wang, and Y. Sun, "Heterogeneous graph transformer," in Proc. Web Conf., 2020, pp. 2704-2710.
+
+[46] A. Kendall, Y. Gal, and R. Cipolla, "Multi-task learning using uncertainty to weigh losses for scene geometry and semantics," in Proc. IEEE Conf. Comput. Vis. Pattern Recognit., 2018, pp. 7482-7491.
+
+[47] S. Liu, E. Johns, and A. J. Davison, "End-to-end multi-task learning with attention," in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit., 2019, pp. 1871-1880.
+
+[48] Z. Chen, V. Badrinarayanan, C.-Y. Lee, and A. Rabinovich, "Gradnorm: Gradient normalization for adaptive loss balancing in deep multitask networks," in Proc. Int. Conf. Mach. Learn., 2018, pp. 794-803.
+
+[49] R. Moore and J. DeNero, "L1 and L2 regularization for multiclass hinge loss models," in Proc. 2011 Symp. Mach. Learn. Speech Lang. Process., 2011, pp. 1-5.
+
+[50] W. Song, Z. Xiao, Y. Wang, L. Charlin, M. Zhang, and J. Tang, "Session-based social recommendation via dynamic graph attention networks," in Proc. 12th ACM Int. Conf. Web Search Data Mining, 2019, pp. 555-563.
+
+[51] Y. Hou, J. Li, Z. He, A. Yan, X. Chen, and J. McAuley, "Bridging language and items for retrieval and recommendation," 2024, arXiv:2403.03952.
+
+[52] C. X. Ling, J. Huang, and H. Zhang, "AUC: A statistically consistent and more discriminating measure than accuracy," in Proc. 18th Int. joint Conf. Artif. Intell., 2003, pp. 519-524.
+
+[53] M. Grandini, E. Bagli, and G. Visani, "Metrics for multi-class classification: An overview," 2020, arXiv: 2008.05756.
+
+[54] M. S. Schlichtkrull, T. N. Kipf, P. Bloem, R. van den Berg, I. Titov, and M. Welling, "Modeling relational data with graph convolutional networks," in Proc. 15th Semantic Web Int. Conf., 2018, pp. 593-607.
+
+[55] K. Xu, W. Hu, J. Leskovec, and S. Jegelka, "How powerful are graph neural networks?," in Proc. 7th Int. Conf. Learn. Representations, 2019.
+
+[56] H. Su, Z. Du, J. Li, L. Zhu, and K. Lu, "Cross-domain adaptative learning for online advertisement customer lifetime value prediction," in Proc. AAAI Conf. Artif. Intell., 2023, pp. 4605-4613.
+
+[57] M. Wang et al., "Deep graph library: A graph-centric, highly-performant package for graph neural networks," 2019, arXiv: 1909.01315.
+
+[58] D. P. Kingma and J. Ba, "Adam: A method for stochastic optimization," in Proc. 3 rd Int. Conf. Learn. Representations, 2015.
+
+![13_893_485_221_275_0.jpg](images/13_893_485_221_275_0.jpg)
+
+Lei Zhang (Senior Member, IEEE) received the BSc degree from Anhui Agriculture University, in 2007 and the PhD degree from the University of Science and Technology of China, in 2014. Currently, he is an associate professor with the School of Computer Science and Technology, Anhui University, China. His main research interests include multi-objective optimization and its applications. He has published more than 100 papers in refereed journals and conferences, such as IEEE Transactions on Evolutionary Computation, IEEE Transactions on Cybernetics, IEEE Transactions on Emerging Topics in Computational Intelligence, IEEE Transactions on Big Data, IEEE Transactions on Network Science and Engineering, IEEE Transactions on Computational Social Systems, ACM Transactions on Knowledge Discovery from Data, Transactions on the Web, IEEE Computational Intelligence Magazine, Information Sciences, ACM SIGKDD, AAAI, IJCAI. He is the recipient of the ACM CIKM'12 Best Student Paper Award and BIC-TA'19 Best Paper Award.
+
+![13_892_1039_224_281_0.jpg](images/13_892_1039_224_281_0.jpg)
+
+Wuji Zhang received the BSc degree from the School of Computer Science and Technology, Anhui agricultural University of Technology, China, in 2021. He is currently working toward the master's degree from the School of Computer Science and Technology, An-hui University, China. His current research interests include graph neural network, social recommendation system and multi-behavior recommendation system.
+
+![13_894_1432_218_272_0.jpg](images/13_894_1432_218_272_0.jpg)
+
+Likang Wu is currently a lecturer with the College of Management and Economics, Tianjin University. His major research interests include recommendation system, graph embedding, and large language model. He has published several papers in refereed journals and conference proceedings.
+
+![13_890_1763_227_280_0.jpg](images/13_890_1763_227_280_0.jpg)
+
+Hongke Zhao received the PhD degree from the University of Science and Technology of China (USTC), Hefei, China. He is an associate professor with the College of Management and Economics, Tianjin University. His research interest includes data mining, algorithm management. He has published more than 100 papers in refereed journals and conference proceedings, such as INFORMS Journal on Computing, IEEE Transactions on Knowledge and Data Engineering, IEEE Transactions on Evolutionary Computation, ACM Transactions on Intelligent Systems and Technology, IEEE Transactions on Systems, Man, and Cybernetics, Scientomet-rics, ACM SIGKDD, ACM SIGIR, IJCAI, AAAI and IEEE ICDM. He was the recipient of Distinguished Dissertation Award Nomination of CAAI (2019), the Best Student Paper Award of CCML-2019.

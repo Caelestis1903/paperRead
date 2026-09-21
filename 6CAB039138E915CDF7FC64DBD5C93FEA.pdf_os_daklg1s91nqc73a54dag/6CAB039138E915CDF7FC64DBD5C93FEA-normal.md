@@ -1,0 +1,665 @@
+# Multi-Grained Preference Enhanced Transformer for Multi-Behavior Sequential Recommendation
+
+Chuan He
+
+Zhejiang University of Technology
+
+Hangzhou, China
+
+hechuan@zjut.edu.cn
+
+Yongchao Liu
+
+Ant Group
+
+Hangzhou, China
+
+yongchao.ly@antgroup.com
+
+Qiang Li
+
+Zhejiang University of Technology
+
+Hangzhou, China
+
+qiangli@zjut.edu.cn
+
+Weiqiang Wang
+
+Ant Group
+
+Hangzhou, China
+
+weiqiang.wwq@antgroup.com
+
+Xing Fu
+
+Ant Group
+
+Hangzhou, China
+
+zicai.fx@antgroup.com
+
+Xinyi Fu
+
+Ant Group
+
+Hangzhou, China
+
+fxy122992@antgroup.com
+
+Chuntao Hong
+
+Ant Group
+
+Hangzhou, China
+
+chuntao.hct@antgroup.com
+
+Xinwei Yao*
+
+Zhejiang University of Technology
+
+Hangzhou, China
+
+xwyao@zjut.edu.cn
+
+## ABSTRACT
+
+Sequential recommendation (SR) aims to predict the next purchasing item according to users' dynamic preference learned from their historical user-item interactions. To improve the performance of recommendation, learning dynamic heterogeneous cross-type behavior dependencies is indispensable for recommender system. However, there still exists some challenges in Multi-Behavior Sequential Recommendation (MBSR). On the one hand, existing methods only model heterogeneous multi-behavior dependencies at behavior-level or item-level, and modeling interaction-level dependencies is still a challenge. On the other hand, the dynamic multi-grained behavior-aware preference is hard to capture in interaction sequences, which reflects interaction-aware sequential pattern. To tackle these challenges, we propose a Multi-Grained Preference enhanced Transformer framework (M-GPT). First, M-GPT constructs an interaction-level graph of historical cross-typed interactions in a sequence. Then graph convolution is performed to derive interaction-level multi-behavior dependency representation repeatedly, in which the complex correlation between historical cross-typed interactions at specific orders can be well learned. Secondly, a novel multifaceted transformer architecture equipped with multi-grained user preference extraction is proposed to encode the interaction-aware sequential pattern enhanced by capturing temporal behavior-aware multi-grained preference . Experiments on the real-world datasets indicate that our method M-GPT consistently outperforms various state-of-the-art recommendation methods.
+
+Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page. Copyrights for components of this work owned by others than the author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or republish, to post on servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from permissions@acm.org.
+
+Conference acronym 'XX, June 03-05, 2018, Woodstock, NY
+
+Our code is available at: https://anonymous.4open.science/r/MGPT-DF31.
+
+## CCS CONCEPTS
+
+- Information systems \( \rightarrow \) Recommender systems.
+
+## KEYWORDS
+
+Sequential Recommendation, Multi-Behavior Recommendation, Graph Neural Network, Multi-Grained Learning
+
+## ACM Reference Format:
+
+Chuan He, Yongchao Liu, Qiang Li, Weiqiang Wang, Xing Fu, Xinyi Fu, Chuntao Hong, and Xinwei Yao*. 2018. Multi-Grained Preference Enhanced Transformer for Multi-Behavior Sequential Recommendation. In Proceedings of Make sure to enter the correct conference title from your rights confirmation emai (Conference acronym 'XX). ACM, New York, NY, USA, 13 pages. https: //doi.org/XXXXXXX.XXXXXXX
+
+## 1 INTRODUCTION
+
+Recommendation system has been widely utilized on online platform (e.g., E-commerce sites[45], social media platforms[46]) to alleviate the information overload and meet users' diverse interest. Recently, Sequential Recommendation (SR)[28] has become increasingly essential in recommender system due to its capability of capturing time-varying user preference in regard to historical user-item interactions. With the development of deep learning techniques in recent years, a lot of neural network techniques has been applied in solving the sequential recommendation problem. For instance, recurrent neural network-based models aim to learn the sequential pattern within the users' historical item sequence (e.g., GRU4Rec[11]). Moreover, inspired by the transformer framework, some models propose to leverage self-attention mechanism to encode the item-item dependencies (e.g., BERT4Rec[24]). In addition, graph neural network-based models utilize message passing to learn item transition over the constructed user-item or item-item graph (e.g., SURGE[1]). Nevertheless, the above models only consider a single type of user-item interactions which ignore the heterogeneous cross-type behavior inter-dependency. Interactions on an E-commerce platform encompass a variety of behaviors, such as clicking, adding to favorites, adding to cart, and making a purchase. This multi-behavioral nature provides two key advantages. Firstly, different behaviors, like clicking and making a purchase, indicate distinct user intentions. Therefore, analyzing the multi-behavior interaction data offers an opportunity to capture the nuanced and evolving interests of users. Secondly, the data for the target behavior (e.g., purchases on E-commerce platforms, which are typically of utmost concern) is often sparse, leading to significant cold-start issues when modeling target behavior data independently. A few pioneering research has shifted its focus to multi-behavior sequential recommendation (MBSR) problem. Different from the single-interaction data, multi-behavioral data provides various views of user preference. Some models propose to capture the correlation among behavior-specific sub-sequence (e.g., DMT[7], GNNH[39]). Meanwhile, the other research explores the behavior-aware item transitions through injecting the behavior interactions (e.g., MBGCN[12], MB-GMN[34], MBHT[36], MB-STR[40]).
+
+---
+
+*Corresponding author.
+
+---
+
+![1_151_233_718_442_0.jpg](images/1_151_233_718_442_0.jpg)
+
+Figure 1: motivation of our work
+
+Although these previous works are successful in modeling the sequential patterns in behavioral view, there still exist some challenges in MBSR problem:
+
+- CH1. Learning Interaction-Level Dependencies.In multi-behavior recommendation scenario, a historical interaction consist of item-specific semantic and behavior-specific semantic (e.g., click, favorite, add to cart and purchase). Items with varying behaviors interacting will give rise to intricate multi-behavior dependencies. Some prior approaches (e.g., MB-GMN[34], MB-GCN[12], and DMT[7]) involve initially aggregating items within each behavior to obtain a cohesive representation, followed by modeling dependencies across all behaviors using attention or weighted summation operations. These approaches model the multi-behavior dependency between interactions with same behavior type, which we called behavior-level dependency (e.g., blue arrow). Recently, MB-STR[40] proposed multi-behavior multi-head self-attention to model multi-behavior dependency between interactions with same item, which we called item-level dependency (e.g., green arrow). Nevertheless, multi-behavior dependency between interactions with inconsistent behavior types and items is significant as well, which we defined as interaction-level dependency (e.g., red arrow). For instance, purchasing cell phone increases the probability of click on earphone. And there are rarely methods to model it. Thus, how to model multi-behavior dependencies at interaction-level is still a challenge for multi-behavior recommendation.
+
+- CH2. Learning Dynamic Behavior-Aware Multi-Grained Preference.Sequential information is significant to multi-behavior sequential recommendation. A long-term interaction sequence can be divided into several sessions according to users' dynamic multi-grained preference. As depicted in Figure 1, the interaction sequence of the boy consists of two main sessions. The first session including cell phones and earphones reflects the intention for electronic products. The second session including basketball shoes and basketball jerseys reveals the interest for sports. These two varying sessions show the dynamic user preference. From a deep perspective of a single session, when we only focus on one interaction, such as purchasing a pair of basketball shoes, we may only think that he is interested in collecting sneakers. However, when we combine other interactions, such as purchasing basketball jerseys, we will find that he is actually interested in playing basketball as a sport, which reveals the multi-grained preference. Meanwhile, we can distinguish the intensity of interest in varying items by different typed behaviors. Some previous works (e.g., MB-STR[40], MBHT[36]) proposed methods to model the sequential information ignoring the dynamic behavior-aware multi-grained preference. MISSL[31] emphasizes on capturing multi-typed interests. Hence, how to model multi-behavior sequential pattern involving dynamic behavior-aware multi-grained preference is still a challenge for multi-behavior sequential recommendation.
+
+To solve aforementioned issues, in this paper, we propose Multi-Grained Preference enhanced Transformer (M-GPT) to improve the recommendation performance. To achieve this goal, M-GPT is designed with two core components, e.g., interaction-aware dependency extractor and multifaceted sequential pattern generator. The interaction-level dependency extractor is developed to model the personalized interaction-level multi-behavior dependency from low-order to high-order(Ch1). In this component, we first construct a learnable graph structure according to item-behavior interactions in user historical sequence. Specifically, the incidence matrix of our graph is calculated by the inner product of item- and behavior-level dependency representations, which learns multi-behavior dependency at interaction-level. Then graph convolution is utilized iteratively to model interaction-level dependency in various orders. The multifaceted sequential pattern generator aims to capture the sequential interaction pattern enhanced by extracting behavior-aware multi-grained preference in different time scales (Ch2). We first perform the transformer layer with linear attention to model the sequential pattern more efficiently. Moreover, the interaction sequences are divided into several sessions by different time scales. Then the multi-grained self-attention is performed to capture session-specific multi-behavior preference based on multi-grained user intent in each session. To aggregate the multi-grained preference captured in each session, an aggregator is performed to fuse session-based multi-grained preference representations with temporal effects into our sequential interaction pattern. To summarize, the contributions in this paper are listed as follows,
+
+- We highlight the existing challenges in multi-behavior sequential recommendation, including modelling interaction-level multi-behavior dependencies and dynamic behavior-aware multi- grained preference.
+
+- We propose a novel framework M-GPT for multi-behavior sequential recommendation. Two core components are Interaction-Level Dependency Extractor(IDE) and Multifaceted Sequential Pattern Generator(MSPG). Interaction-level multi-behavior dependency is modelled by IDE through a specially designed interaction-aware graph. Moreover, multi-behavior sequential pattern is learned by MSPG enhanced with modelling dynamic behavior-aware multi-grained preference.
+
+- We perform extensive experiments on three public datasets, which validate the superiority of our proposed M-GPT compared with some state-of-art recommender systems. More meticulous experiments further show the benefits of our model.
+
+## 2 RELATED WORK
+
+### 2.1 Sequential Recommendation
+
+Sequential Recommendation (SR) is designed to capture the evolution of user preferences by modeling sequences. Initial approaches typically modeled sequential dependencies based on the Markov Chain assumption [24]. However, with the progression of deep learning, models based on Recurrent Neural Networks (RNN) [6, 11, 44], Convolutional Neural Networks (CNN) [25], Graph Neural Networks (GNN) [1, 2, 9, 10, 20, 26, 27, 29, 32, 35, 38], and attention mechanisms \( \left\lbrack  {3,{14},{15},{18},{24},{37},{45}}\right\rbrack \) have been utilized to uncover dynamic user interests hidden within behavior sequences. More recently, models based on contrastive learning \( \left\lbrack  {{17},{21},{30},{41}}\right\rbrack \) have been introduced to extract significant user patterns by generating self-supervision signals. While these methods enhance the performance of sequential recommendation, they tend to have limited predictive power when dealing with short single-behavior sequences.
+
+### 2.2 Multi-Behavior Recommendation
+
+Recently, multi-behavior recommender systems have been developed to model the heterogeneity of user-item relations \( \lbrack 3,5,{12},{34} \) , 43]. For instance, NMTR[5] is a multi-task recommendation framework that establishes predefined cascading relationships between behaviors. Inspired by the capabilities of Graph Neural Networks (GNNs), models such as MBGCN[12], MBGMN [34], and MGNN [43] have been developed. These models utilize graph-structured message passing over the generated multi-relational user-item interaction graphs. However, these approaches do not take into account the time-evolving multi-behavior user preference. Some existing work \( \left\lbrack  {{36},{40}}\right\rbrack \) separates the modeling phases of item and behavior sequences. These methods incorporate behavior patterns as auxiliary information by adding behavior types into the input or modeling behavior sequences independently. For instance, BINN [16] uses a contextual long short-term memory architecture to model item and behavior sequences. MB-STR [40] leverages both behavior-specific semantics and multi-behavior sequential heterogeneous dependencies via transformer layers. These methods maintain the integrity of interaction sequences, enabling the exploration of complex multi-behavior sequential patterns.
+
+## 3 METHODOLOGY
+
+### 3.1 Problem Formulation
+
+We first describe a typical multi-behavior recommendation scenario. Suppose that we have \( \left| U\right| \) users \( {u}_{i} \in  U \) and \( \left| V\right| \) items \( {v}_{i} \in  V \) in our multi-behavior recommender system. In real shopping scenario, there exists various types of user-item interactions like click, favorite, add to cart and purchase. Thus, we formulate the set of behavior \( B = \left\{  {{B}_{1},{B}_{2},\ldots ,{B}_{\left| B\right| }}\right\} \) , where \( \left| B\right| \) is the number of user-item interaction type. Among different types of user-item interactions, purchase is the most important one we care about which is called target behavior and the other behaviors are called auxiliary behaviors. For an individual user \( {u}_{i} \) , his historical user-item interactions compose a personalized multi-behavior interaction sequence, which is defined as \( {S}_{u} = \left\{  {\left\langle  {{v}_{1},{b}_{1}}\right\rangle  ,\left\langle  {{v}_{2},{b}_{2}}\right\rangle  ,\ldots ,\left\langle  {{v}_{\left| {s}_{u}\right| },{b}_{\left| {s}_{u}\right| }}\right\rangle  }\right\} \) and \( \left| {s}_{u}\right| \) is the number of interactions in the sequence. Our task is to predict top- \( K \) items from \( V \) that have a higher possibility to be interacted by user \( {u}_{i} \) under target behavior at the next time step by extracting the latent information in user's personalized dynamic heterogeneous multi-behavior dependencies.
+
+### 3.2 Overview of M-GPT
+
+In this section, we introduce our proposed M-GPT framework. As depicted in Figure 2, M-GPT consists of two important components: 1) interaction-level dependency extractor, and 2) multifaceted sequential pattern generator. Firstly, to learn the multi-behavior dependencies at interaction-level, we design the interaction-level dependency extractor which is a graph learning paradigm. The graphs are constructed to consider both item-level and behavior-level multi-behavior dependencies. Then graph convolution is performed iteratively to model interaction-level inter-dependencies at different orders. Moreover, to precisely model the sequential patterns of user historical interactions, the multifaceted sequential pattern generator is proposed which follow the transformer-based method. Specifically, we propose multi-grained self-attention mechanism to capture users' temporal multi-grained preference in different time scales to enhance the expression of sequential patterns. Finally, the model predicts the top- \( K \) items users intend to purchase through learning the latent information from these two components. The overall learning progress of M-GPT is performed in Appendix A.
+
+### 3.3 Interaction-Level Dependency Extractor
+
+In multi-behavior recommendation, multi-behavior dependency consists of item-level dependency and behavior-level dependency. In previous works, these two types of dependencies are modelled in an asynchronous or independent manner, which deteriorates the effectiveness of recommendation. To this end, we propose interaction-level dependency extractor to model multi-behavior dependency at interaction level that models item- and behavior- level dependency in a synchronous and integrated manner.
+
+3.3.1 Interaction-aware Context Embedding Layer. In multi- behavior sequential recommendation, user-item interactions consist of item-specific and behavior-specific semantics. To extract the interaction-level dependency efficiently, we design the interaction-aware context embedding layer to jointly encode the item-level and behavior-level contextual information. To this end, we define the interaction-aware latent representation \( {x}_{i} \in  {\mathbb{R}}^{d} \) of a given user-item interaction as following:
+
+\[
+{h}_{i} = {e}_{i} \oplus  {b}_{i} \tag{1}
+\]
+
+\[
+{M}_{{s}_{u}} = \left\{  {{h}_{0},{h}_{1},\ldots ,{h}_{\left| {s}_{u}\right|  - 1}}\right\} \tag{2}
+\]
+
+![3_151_236_1502_705_0.jpg](images/3_151_236_1502_705_0.jpg)
+
+Figure 2: The overview structure of M-GPT
+
+where \( {e}_{i} \in  {\mathbb{R}}^{d} \) represents the item embedding of \( {v}_{i}.{b}_{i} \in  {\mathbb{R}}^{d} \) is the representation of behavior embedding according to the behavior type user \( {u}_{i} \) interacts with item \( {v}_{i}.{M}_{{s}_{u}} \) is a set of interaction representation within the historical sequence of user \( {u}_{i} \) .
+
+3.3.2 Interaction-Level Graph Construction. Given the historical interaction sequence \( {M}_{{s}_{u}} = \left\{  {{h}_{0},{h}_{1},\ldots ,{h}_{\left| {s}_{u}\right|  - 1}}\right\} \) of user \( u \) , we convert these interactions into a fully connected undirected graph \( {\mathcal{G}}_{{s}_{u}} \) . To learn interaction-level multi-behavior dependency, we introduce the incidence matrix \( \mathcal{A} \in  {\mathbb{R}}^{\left| {s}_{u}\right|  \times  \left| {s}_{u}\right| } \) taking both item-level and behavior-level semantics into consideration. To achieve this goal, we calculate each entry \( {\mathcal{A}}_{i, j} \in  \mathbb{R} \) as following,
+
+\[
+{E}_{i, j} = {e}_{i} \odot  {e}_{j} \tag{3}
+\]
+
+\[
+{B}_{i, j} = {b}_{i} \odot  {b}_{j} \tag{4}
+\]
+
+\[
+{\mathcal{A}}_{i, j} = {E}_{i, j} \cdot  {B}_{i, j} \tag{5}
+\]
+
+where \( {e}_{i},{e}_{j} \in  {\mathbb{R}}^{d} \) are item semantic embedding representations and \( {b}_{i},{b}_{j} \in  {\mathbb{R}}^{d} \) are behavior semantic embedding representations.First, we operate dot product on item-specific pair and behavior-specific pair to get \( {E}_{i, j},{B}_{i, j} \in  {\mathbb{R}}^{d} \) respectively, which learns the multi-behavior dependency from item-level and behavior-level perspectives synchronously. To learn item- and behavior-level dependency in an integrated manner, an inner product is performed on item-level dependency representation and behavior-level dependency representation. Meanwhile, we add \( {L1} \) regularization on the incidence matrix \( \mathcal{A} \) to facilitate the interaction-level dependency learning.
+
+3.3.3 Multi-Order Interaction-Level Dependency Learning. Learning interaction-level dependency in a single order is not desirable[26] due to the diverse complexity of the personalized behavior pattern. Thus, we use graph convolution to gain dependencies representation from low-order to high-order as follows:
+
+\[
+{H}^{\left( l + 1\right) } = \operatorname{LeakyReLU}\left( {{\widetilde{D}}^{-\frac{1}{2}}\widetilde{\mathcal{A}}{\widetilde{D}}^{-\frac{1}{2}}{H}^{\left( l\right) }W}\right) , \tag{6}
+\]
+
+\[
+{\widetilde{D}}^{-\frac{1}{2}} = I + {D}^{-\frac{1}{2}}\mathcal{A}{D}^{-\frac{1}{2}} \tag{7}
+\]
+
+\[
+{H}^{\left( 0\right) } = \left\lbrack  {{h}_{0}^{\left( 0\right) },{h}_{1}^{\left( 0\right) },\ldots ,{h}_{\left| {s}_{u}\right|  - 1}^{\left( 0\right) }}\right\rbrack \tag{8}
+\]
+
+where \( {H}^{l} \) denotes the interaction-level dependency representations in different order \( l \in  \{ 0,\ldots , L\} \) . We follow the common practice of graph convolution. identity matrix \( I \) is added to achieve self-loop aggregation, \( D \) denotes the degree matrix of \( \mathcal{A}.W \) is a fixed parameter matrix to achieve the aggregation of high-order neighbors more efficiently and effectively. As for activation function, we use LeakyReLU. All the dependency representations at various orders will be utilized to be the input of multifaceted sequential pattern generator.
+
+### 3.4 Multifaceted Sequential Pattern Generator
+
+Existing transformer-based SR methods efficiently model one-sided sequential dependencies of item transitions. Nevertheless, in real world multi-behavior recommendation scenario, there are a lot of factors influencing the generation of multi-behavior sequential patterns. For instance, user \( {u}_{i} \) ’s point of interests changes in different time scales. Moreover, users' preference is multi-grained in a single time scale. Thus, it's indispensable for us to design a multifaceted method to extract sequential pattern from the historical interaction sequence. In this section, the details of multifaceted sequential pattern generator will be introduced.
+
+3.4.1 Sequential Information Injection. To encode the sequential pattern of user \( u \) , we need to inject the sequential information into the interaction-level dependency representation of each historical interactions in sequence \( {S}_{u} \) . Specifically, we set the max length of historical interaction sequence \( {S}_{u} \) as \( N \) . if the sequence length is less than \( N \) , special [padding] tokens are padded to the left as dummy past interactions. Then, we construct a positional embedding matrix \( {\mathbb{R}}^{N \times  d} \) to encode the sequential information:
+
+\[
+{H}^{\left( l\right) } = \left\lbrack  {{h}_{0}^{\left( l\right) } \oplus  {p}_{0},\ldots ,{h}_{N - 1}^{\left( l\right) } \oplus  {p}_{N - 1}}\right\rbrack  \;\left( {l = 0,1,\ldots }\right) \tag{9}
+\]
+
+where \( {H}^{\left( l\right) } \) is the \( l \) -th order of interaction-level dependency representation, \( {h}_{i}^{\left( l\right) } \) denotes the interaction representation on \( i \) -th position, \( {p}_{i} \) denotes the embedding representation of \( i \) -th position. We inject the sequential information through element-wise add operation.
+
+3.4.2 Global Sequential Pattern Encoding. Previous works leveraged self-attention layer to encode the global sequential pattern. To alleviate the high computational and memory cost of dot-product for long term sequence, we utilize a linear self-attention layer to encode the global sequential pattern inspired by [18].
+
+Specifically, to reduce the model complexity to \( O\left( N\right) \) , we first calculate \( {\mathbf{K}}^{\mathrm{T}}\mathbf{V} \) rather than \( \mathbf{Q}{\mathbf{K}}^{\mathrm{T}} \) , which reduce the model complexity from \( O\left( {{N}^{2}d}\right) \) to \( O\left( {N{d}^{2}}\right) \left( {N >  > d}\right) \) . Then, to make our linear attention mechanism equivalent to original dot product attention mechanism, we perform row- and column-wise \( {L2} \) Normalization on \( Q \) (query matrix) and \( K \) (key matrix) respectively. Meanwhile, to ensure a relatively stable learning process, ELU function is performed on the \( Q \) and \( K \) . The formulation of linear attention mechanism is shown as following:
+
+\[
+{H}_{Lin}^{\left( l\right) } = {\rho }_{1}\left( {\operatorname{elu}\left( {{H}^{\left( l\right) }{W}_{Q}}\right) }\right) \left( {{\rho }_{2}{\left( \operatorname{elu}\left( {H}^{\left( l\right) }{W}_{K}\right) \right) }^{\mathrm{T}}{H}^{\left( l\right) }{W}_{V}}\right) \tag{10}
+\]
+
+\[
+{\rho }_{1}\left( {\operatorname{elu}{\left( {H}^{\left( l\right) }{W}_{Q}\right) }_{i}}\right)  = \frac{\operatorname{elu}{\left( {H}^{\left( l\right) }{W}_{Q}\right) }_{i}}{\sqrt{d}{\begin{Vmatrix}\operatorname{elu}{\left( {H}^{\left( l\right) }{W}_{Q}\right) }_{i}\end{Vmatrix}}_{2}} \tag{11}
+\]
+
+\[
+{\rho }_{2}\left( {\operatorname{elu}{\left( {H}^{\left( l\right) }{W}_{K}\right) }_{j}}\right)  = \frac{\operatorname{elu}{\left( {H}^{\left( l\right) }{W}_{K}\right) }_{j}}{\sqrt{d}{\begin{Vmatrix}\operatorname{elu}{\left( {H}^{\left( l\right) }{W}_{K}\right) }_{j}\end{Vmatrix}}_{2}} \tag{12}
+\]
+
+where \( {\rho }_{1}\left( \cdot \right) \) denotes the row-wise \( {L2} \) Normalization for \( \forall i \in  \left\lbrack  N\right\rbrack \) and \( {\rho }_{2}\left( \cdot \right) \) denotes the column-wise \( {L2} \) Normalization for \( \forall j \in  \left\lbrack  d\right\rbrack \) , where \( \operatorname{elu}{\left( {H}^{\left( l\right) }{W}_{Q}\right) }_{i} \) is \( i \) -th row of \( \operatorname{elu}\left( {{H}^{\left( l\right) }{W}_{Q}}\right) \) and \( \operatorname{elu}{\left( {H}^{\left( l\right) }{W}_{K}\right) }_{j} \) is \( j \) -th column of \( \operatorname{elu}\left( {{H}^{\left( l\right) }{W}_{K}}\right) .{W}_{Q},{W}_{K} \) and \( {W}_{V} \) are transformation matrices. We perform linear self-attention layer on the whole interaction sequence to learn the global sequential pattern efficiently and effectively.
+
+3.4.3 Temporal Multi-Grained Preference Encoding. The global sequential pattern reflects user's stable long-term preference. Nevertheless, user's short-term preference varies from different time scales which is fluctuated. To model short-term preference, we first divide the interaction sequence into sessions. Given an historical interaction sequence \( {H}^{\left( l\right) } = \left\lbrack  {{h}_{0}^{\left( l\right) },\ldots ,{h}_{N - 1}^{\left( l\right) }}\right\rbrack \) of user \( u \) , we divide it into several sessions with different time scales, as following:
+
+\[
+{H}^{\left( l\right) } = \left\lbrack  {{S}_{0}^{\left( l\right) },{S}_{1}^{\left( l\right) }\ldots ,{S}_{\frac{N}{t} - 1}^{\left( l\right) }}\right\rbrack \tag{13}
+\]
+
+\[
+{S}_{i}^{\left( l\right) } = \left\lbrack  {{h}_{i \times  t}^{\left( l\right) },{h}_{i \times  t + 1}^{\left( l\right) },\ldots ,{h}_{\left( {i + 1}\right)  \times  t - 1}^{\left( l\right) }}\right\rbrack \tag{14}
+\]
+
+where \( t \) denotes the number of interactions in a session, \( {S}_{i}^{l} \) denotes the \( i \) -th session and the number of sessions is \( \frac{N}{t} \) . To construct a hierarchical structure, we can select different values of \( t \) to learn various user preference with different time granularity.
+
+Moreover, user preference is various at different levels of perspective as we talk about in introduction. Inspired by [42], we propose a multi-grained multi-head self-attention layer to encode the multi-grained preference in sessions divided by different time scales. First, to create multi-grained user intent, we group the last items with different lengths in a session. Then, we concatenate them within the group to form a raw group representation. At last, linear transformation is performed on these group representations to represent the multi-grained user queries. The detail is shown as following:
+
+\[
+{Q}_{1} = {W}_{{q}_{1}}\left( {h}_{t - 1}^{\left( l\right) }\right)
+\]
+
+\[
+{Q}_{2} = {W}_{{q}_{2}}\left( {\operatorname{Concat}\left( {{h}_{t - 1}^{\left( l\right) },{h}_{t - 2}^{\left( l\right) }}\right) }\right) \tag{15}
+\]
+
+......,
+
+\[
+{Q}_{g} = {W}_{{q}_{g}}\left( {\operatorname{Concat}\left( {{h}_{t - 1}^{\left( l\right) },\ldots ,{h}_{t - g}^{\left( l\right) }}\right) }\right)
+\]
+
+where \( {h}_{j}^{\left( l\right) } \in  {S}_{i}^{\left( l\right) } \) denotes interaction representation in the session of \( l \) -th order, \( {W}_{{q}_{m}} \in  {\mathbb{R}}^{d \times  {md}} \) denotes linear transformation matrices for multi-grained user queries. Generated multi-grained queries representation reflects characteristics of short-term sequence including inherent priority and local invariance.
+
+After generating the multi-grained query representations, we concatenate them into a whole query matrix \( Q \in  {\mathbb{R}}^{g \times  d} \) . Then, multi-head attention layer is performed and the attention weights are calculated as
+
+\[
+{\alpha }_{h} = \operatorname{softmax}\left( \frac{Q{W}_{h}^{Q}{\left( {S}_{i}^{\left( l\right) }{W}_{h}^{K}\right) }^{\mathrm{T}}}{\sqrt{d}}\right) \tag{16}
+\]
+
+where \( {S}_{i}^{\left( l\right) } \in  {\mathbb{R}}^{t \times  d} \) denotes the whole interaction representations. \( {W}_{h}^{Q},{W}_{h}^{K} \in  {\mathbb{R}}^{d \times  d} \) are the transformation matrices. \( h = 1,2,\ldots , H \) denotes the attention head index. We get \( \alpha  \in  {\mathbb{R}}^{N \times  {gH}} \) , the combination of multi-head attention weights, and perform \( {L}_{p} \) pooling on the weight \( \alpha \) to balance the influence of different query granularity.
+
+\[
+{\widetilde{\alpha }}_{j, h} = {\left\lbrack  \mathop{\sum }\limits_{{v = 0}}^{{q - 1}}{\left( {\alpha }_{j,{vH} + h}\right) }^{p}\right\rbrack  }^{\frac{1}{p}} \tag{17}
+\]
+
+\[
+{S}_{i}^{\left( l\right) } = \operatorname{Concat}\left( {{\widetilde{\alpha }}_{1}{S}_{i}^{\left( l\right) }{W}_{1}^{V},\ldots ,{\widetilde{\alpha }}_{H}{S}_{i}^{\left( l\right) }{W}_{H}^{V}}\right) \tag{18}
+\]
+
+where \( {\widetilde{\alpha }}_{j, h} \) denotes the output of pooling operator. \( {S}_{i}^{\left( l\right) } \) denotes the multi-grained user preference representation of \( i \) -th session in \( l \) -th order dependency representation. After that, we add the average of positional embedding representations in session \( {S}_{i}^{\left( l\right) } \) to encode the sequential information of the session as following:
+
+\[
+{S}_{i}^{\left( 1\right) } \oplus   = \operatorname{ave}\left( {{p}_{i \times  t}\oplus ,\ldots , \oplus  {p}_{\left( {i + 1}\right)  \times  t - 1}}\right) \tag{19}
+\]
+
+Given \( \frac{N}{t} \) multi-grained preference representations \( {S}_{i}^{\left( t\right) } \in  {\mathbb{R}}^{t \times  d}(i = \; 0,\ldots ,\frac{N}{t} - 1) \) , we get a whole sequence preference representation \( {S}_{t}^{l} \in  {\mathbb{R}}^{N \times  d} \) with time scale \( t \) . In M-GPT, we select two different time scales \( {t}_{1} \) and \( {t}_{2} \) to learn multifaceted preference representations.
+
+3.4.4 Multifaceted Pattern Fusion. To fuse our multifaceted pattern representations, we design a fusion layer to aggregate the global pattern embedding \( {H}_{\text{ Lin }}^{\left( l\right) } \in  {\mathbb{R}}^{N \times  d} \) and local pattern embed- \( \operatorname{ding}{S}_{{t}_{1}}^{\left( l\right) },{S}_{{t}_{2}}^{\left( l\right) } \in  {\mathbb{R}}^{N \times  d} \) enhanced with multi-grained preference as follows:
+
+\[
+\widetilde{{H}^{\left( l\right) }} = \left( {{H}_{\text{ Lin }}^{\left( l\right) }\begin{Vmatrix}{S}_{{t}_{1}}^{\left( l\right) }\end{Vmatrix}{S}_{{t}_{2}}^{\left( l\right) }}\right) {W}^{d} \tag{20}
+\]
+
+where \( {W}^{d} \in  {\mathbb{R}}^{{3N} \times  N} \) is the projection matrix which transforms \( {\mathbb{R}}^{{3N} \times  d} \) dimensional embedding into \( {\mathbb{R}}^{N \times  d} \) dimensional representations.
+
+3.4.5 Multifaceted Transformer Layer. At last, non-linearity is injected into our multifaceted transformer layer. We also perform residual connection and layer normalization on the output:
+
+\[
+{\widetilde{H\left( l\right) }}^{n} = \operatorname{LayerNorm}\left( {{\widetilde{H\left( l\right) }}^{n} + {\widetilde{H\left( l\right) }}^{n - 1}}\right) \tag{21}
+\]
+
+\[
+{\widetilde{H\left( l\right) }}^{n} = \operatorname{GELU}\left( {{W}_{1}^{n}{\widetilde{H\left( l\right) }}^{n - 1} + {b}_{1}^{n}}\right) {W}_{2}^{n} + {b}_{2}^{n} \tag{22}
+\]
+
+where \( {W}_{1}^{n},{W}_{2}^{n} \in  {\mathbb{R}}^{d \times  {d}_{h}} \) and \( {b}_{1}^{n},{b}_{2}^{n} \in  {\mathbb{R}}^{d} \) are learnable projection matrices and bias terms. \( n \) denotes the \( n \) -th Multifaceted Transformer Layer.
+
+### 3.5 Model Training and Prediction
+
+3.5.1 Prediction. Given a candidate item \( {x}_{t} \) , we calculate the recommendation score which denotes the probability of \( {x}_{t} \) being the \( i \) -th position in interaction sequence as follow:
+
+\[
+\widetilde{{p}_{i, t}} = \operatorname{MaxPooling}\left( {{\widetilde{{H}^{\left( 0\right) }}}_{i}^{n}{e}_{t},{\widetilde{{H}^{\left( 1\right) }}}_{i}^{n}{e}_{t},\ldots ,{\widetilde{{H}^{\left( l\right) }}}_{i}^{n}{e}_{t}}\right) \tag{23}
+\]
+
+where \( {p}_{i, t} \) denotes the probability of item \( {x}_{t} \) being the \( i \) -th position in sequence, \( {H}^{\left( l\right) }{}_{i}^{n} \) denotes the representation embedding of \( i \) -th position in \( l \) -th order of interaction-level dependency representations and \( {e}_{t} \) denotes the item embedding of item \( {x}_{t} \) . In M-GPT, we choose to perform MaxPooling on various orders of interaction-level dependency rather than SumPooling or using attention mechanism.
+
+3.5.2 Training. We train proposed M- GPT by Cloze task[13,24, 36]. Specifically, we first mask some interactions whose behavior type is target behavior(e.g. purchase) with mask ratio \( \rho \) . Then, we replace these masked interactions including their item embedding and behavior embedding with special token [MASK], which follows the training strategy as [36]. For enabling our M-GPT get best performance from low-order to high-order interaction-level dependency, we tend to define a cross-entropy loss for each order. Hence, our loss \( L \) is defined as follows:
+
+\[
+{\mathcal{L}}_{\text{ all }} = \mathop{\sum }\limits_{{l = 1}}^{l}{\mathcal{L}}_{l} + {\theta }_{1}{\mathcal{L}}_{1} + {\theta }_{2}{\mathcal{L}}_{2} \tag{24}
+\]
+
+\[
+{\mathcal{L}}_{l} = \frac{1}{\left| T\right| }\mathop{\sum }\limits_{{t \in  T, i \in  I}} - \log \left( \frac{\exp {\widetilde{{H}^{\left( l\right) }}}_{i}^{n}{e}_{t}}{\mathop{\sum }\limits_{{j \in  V}}\exp {\widetilde{{H}^{\left( l\right) }}}_{i}^{n}{e}_{j}}\right) \tag{25}
+\]
+
+Table 1: Statistics of the used dataset
+
+<table><tr><td>Dataset</td><td>#users</td><td>#items</td><td>#interactions</td><td>Behavior types</td></tr><tr><td>Taobao</td><td>147,894</td><td>99,037</td><td>7,658,926</td><td>\{pv, fav, cart, buy\}</td></tr><tr><td>IJCAI</td><td>423,423</td><td>874,328</td><td>36,222,123</td><td>\{pv, fav, cart, buy\}</td></tr><tr><td>Retailrocket</td><td>11,649</td><td>36,233</td><td>87,822</td><td>\{pv, cart, buy\}</td></tr></table>
+
+where \( T \) is the set of ground-truth ids for masked items in each batch, \( I \) is the set of masked positions corresponding to \( T \) , and \( V \) is the item set. \( {L}_{1} \) denotes the \( {L}_{1} \) normalization of adjacent matrix \( \mathcal{A} \) and \( {L}_{2} \) denotes the \( {L}_{2} \) normalization of model parameters. \( {\theta }_{1} \) and \( {\theta }_{2} \) denote the hyperparameters. The time complexity analysis is shown in Appendix B.
+
+## 4 EXPERIMENT
+
+In this section, we conduct comprehensive experiment on three real-world datasets to answer the following questions:
+
+- RQ1: How does our M-GPT perform against various state-of-the-art recommendation methods?
+
+- RQ2: If our proposed module(e.g. interaction-level dependency extractor, multifaceted sequential pattern generator) works effectively in M-GPT?
+
+- RQ3: How does the performance of M-GPT vary with different values of hyper-parameters?
+
+- RQ4: If users' diverse behavior patterns can be well learned by M-GPT?
+
+- RQ5: How to prove that M-GPT works in an interpretable way? The comprehensive result of hyper-parameter analysis is provided in Appendix D.
+
+### 4.1 Experimental Settings
+
+4.1.1 Dataset. To evaluate the performance of our proposed M-GPT, we select two datasets from real-world scenarios. i) Taobao. This dataset is collected from Taobao which is one of the largest e-commerce platforms. It contains four types of behaviors, i.e., page view, tag-as-favorite, add-to-cart and purchase. ii) IJCAI. IJCAI is released by IJCAI contest 2015 for repeat buyers prediction from an online business-to-consumer e-commerce, which includes four types of behaviors, i.e., page view, tag-as-favorite, add-to-cart and purchase. iii) Retailrocket. This dataset was collected from an online shopping website called Retailrocket, spanning a period of 4 months including three behaviors, i.e., page view, add-to-cart and purchase. We set the target behavior as purchase for dataset Taobao, IJCAI and Retail. For a fair comparison, we closely follow the preprocessed datasets with [36]. The detail about three datasets is shown in Table1.
+
+4.1.2 Evaluation Protocols. Following the settings in MBHT, we adopt the leave-one-out strategy for performance evaluation. We choose two evaluation metrics, i.e., Hit Rate (HR), Normalized Discounted Cumulative Gain(NDCG) and Mean Reciprocal Rank(MRR), where we set the cut-off of ranked lists as 5 and 10 . For all experiments, we select the average performance of five times.
+
+Table 2: Experimental results on two datasets. The best results are boldfaced and the second-best results are underlined
+
+<table><tr><td rowspan="2">Model</td><td colspan="5">Taobao</td><td colspan="5">IJCAI</td><td colspan="5">Retail</td></tr><tr><td>HR@5</td><td>NDGC@5</td><td>HR@10</td><td>NDGC@10</td><td>MRR</td><td>HR@5</td><td>NDGC@5</td><td>HR@10</td><td>NDGC@10</td><td>MRR</td><td>HR@5</td><td>NDGC@5</td><td>HR@10</td><td>NDGC@10</td><td>MRR</td></tr><tr><td>Caser</td><td>0.081</td><td>0.060</td><td>0.123</td><td>0.070</td><td>0.067</td><td>0.122</td><td>0.081</td><td>0.155</td><td>0.102</td><td>0.108</td><td>0.581</td><td>0.490</td><td>0.703</td><td>0.530</td><td>0.488</td></tr><tr><td>GRU4Rec</td><td>0.142</td><td>0.101</td><td>0.207</td><td>0.120</td><td>0.115</td><td>0.132</td><td>0.094</td><td>0.189</td><td>0.110</td><td>0.112</td><td>0.590</td><td>0.527</td><td>0.655</td><td>0.598</td><td>0.520</td></tr><tr><td>SASRec</td><td>0.150</td><td>0.108</td><td>0.203</td><td>0.122</td><td>0.120</td><td>0.137</td><td>0.101</td><td>0.189</td><td>0.119</td><td>0.116</td><td>0.620</td><td>0.597</td><td>0.641</td><td>0.601</td><td>0.590</td></tr><tr><td>HPMN</td><td>0.160</td><td>0.130</td><td>0.213</td><td>0.138</td><td>0.130</td><td>0.139</td><td>0.093</td><td>0.194</td><td>0.122</td><td>0.121</td><td>0.612</td><td>0.580</td><td>0.665</td><td>0.538</td><td>0.555</td></tr><tr><td>BERT4Rec</td><td>0.197</td><td>0.154</td><td>0.252</td><td>0.174</td><td>0.161</td><td>0.286</td><td>0.209</td><td>0.392</td><td>0.239</td><td>0.216</td><td>0.759</td><td>0.622</td><td>0.832</td><td>0.644</td><td>0.591</td></tr><tr><td>SR-GNN</td><td>0.098</td><td>0.070</td><td>0.151</td><td>0.086</td><td>0.086</td><td>0.067</td><td>0.048</td><td>0.110</td><td>0.061</td><td>0.058</td><td>0.797</td><td>0.728</td><td>0.840</td><td>0.741</td><td>0.719</td></tr><tr><td>GCSAN</td><td>0.217</td><td>0.157</td><td>0.302</td><td>0.189</td><td>0.171</td><td>0.101</td><td>0.082</td><td>0.164</td><td>0.099</td><td>0.097</td><td>0.821</td><td>0.799</td><td>0.843</td><td>0.803</td><td>0.791</td></tr><tr><td>HyperRec</td><td>0.141</td><td>0.131</td><td>0.217</td><td>0.133</td><td>0.126</td><td>0.129</td><td>0.100</td><td>0.224</td><td>0.137</td><td>0.121</td><td>0.813</td><td>0.854</td><td>0.785</td><td>0.772</td><td>0.767</td></tr><tr><td>SURGE</td><td>0.122</td><td>0.080</td><td>0.188</td><td>0.101</td><td>0.093</td><td>0.211</td><td>0.142</td><td>0.309</td><td>0.177</td><td>0.162</td><td>0.855</td><td>0.821</td><td>0.837</td><td>0.841</td><td>0.825</td></tr><tr><td>MB-GCN</td><td>0.185</td><td>0.103</td><td>0.309</td><td>0.143</td><td>0.149</td><td>0.218</td><td>0.145</td><td>0.335</td><td>0.182</td><td>0.177</td><td>0.830</td><td>0.689</td><td>0.798</td><td>0.701</td><td>0.688</td></tr><tr><td>NMTR</td><td>0.125</td><td>0.082</td><td>0.174</td><td>0.097</td><td>0.103</td><td>0.109</td><td>0.076</td><td>0.184</td><td>0.099</td><td>0.106</td><td>0.810</td><td>0.651</td><td>0.780</td><td>0.677</td><td>0.692</td></tr><tr><td>MB-GMN</td><td>0.192</td><td>0.108</td><td>0.319</td><td>0.154</td><td>0.151</td><td>0.235</td><td>0.161</td><td>0.337</td><td>0.193</td><td>0.176</td><td>0.853</td><td>0.709</td><td>0.804</td><td>0.786</td><td>0.779</td></tr><tr><td>BERT4Rec-MB</td><td>0.209</td><td>0.170</td><td>0.260</td><td>0.186</td><td>0.178</td><td>0.241</td><td>0.179</td><td>0.330</td><td>0.203</td><td>0.190</td><td>0.825</td><td>0.809</td><td>0.841</td><td>0.814</td><td>0.805</td></tr><tr><td>NextIP</td><td>0.301</td><td>0.244</td><td>0.387</td><td>0.274</td><td>0.241</td><td>0.303</td><td>0.232</td><td>0.391</td><td>0.258</td><td>0.245</td><td>0.899</td><td>0.893</td><td>0.906</td><td>0.894</td><td>0.892</td></tr><tr><td>MB-STR</td><td>0.309</td><td>0.248</td><td>0.394</td><td>0.278</td><td>0.250</td><td>0.310</td><td>0.236</td><td>0.393</td><td>0.261</td><td>0.251</td><td>0.907</td><td>0.899</td><td>0.910</td><td>0.899</td><td>0.896</td></tr><tr><td>MBHT</td><td>0.320</td><td>0.253</td><td>0.402</td><td>0.280</td><td>0.259</td><td>0.306</td><td>0.238</td><td>0.390</td><td>0.265</td><td>0.246</td><td>0.908</td><td>0.897</td><td>0.912</td><td>0.898</td><td>0.895</td></tr><tr><td>DyMus+</td><td>0.287</td><td>0.198</td><td>0.313</td><td>0.223</td><td>0.230</td><td>0.289</td><td>0.217</td><td>0.384</td><td>0.247</td><td>0.228</td><td>0.862</td><td>0.855</td><td>0.883</td><td>0.878</td><td>0.879</td></tr><tr><td>TGT</td><td>0.289</td><td>0.202</td><td>0.312</td><td>0.226</td><td>0.232</td><td>0.288</td><td>0.219</td><td>0.381</td><td>0.250</td><td>0.230</td><td>0.883</td><td>0.867</td><td>0.901</td><td>0.892</td><td>0.887</td></tr><tr><td>PBAT</td><td>0.329</td><td>0.262</td><td>0.410</td><td>0.286</td><td>0.264</td><td>0.308</td><td>0.235</td><td>0.390</td><td>0.262</td><td>0.250</td><td>0.907</td><td>0.901</td><td>0.909</td><td>0.896</td><td>0.893</td></tr><tr><td>MISSL</td><td>0.317</td><td>0.252</td><td>0.398</td><td>0.277</td><td>0.254</td><td>0.315</td><td>0.241</td><td>0.399</td><td>0.267</td><td>0.254</td><td>0.901</td><td>0.896</td><td>0.908</td><td>0.893</td><td>0.890</td></tr><tr><td>END4Rec</td><td>0.285</td><td>0.198</td><td>0.301</td><td>0.209</td><td>0.231</td><td>0.277</td><td>0.199</td><td>0.372</td><td>0.241</td><td>0.220</td><td>0.857</td><td>0.749</td><td>0.868</td><td>0.852</td><td>0.794</td></tr><tr><td>M-GPT</td><td>0.369</td><td>0.291</td><td>0.460</td><td>0.321</td><td>0.294</td><td>0.338</td><td>0.259</td><td>0.434</td><td>0.290</td><td>0.263</td><td>0.928</td><td>0.906</td><td>0.941</td><td>0.910</td><td>0.902</td></tr><tr><td>Impr.</td><td>12.2%</td><td>11.1%</td><td>12.2%</td><td>12.2%</td><td>11.4%</td><td>7.3%</td><td>7.5%</td><td>8.8%</td><td>8.6%</td><td>3.5%</td><td>2.2%</td><td>0.8%</td><td>3.2%</td><td>1.2%</td><td>0.7%</td></tr></table>
+
+Table 3: ablation study with key modules
+
+<table><tr><td rowspan="2">Model Variants</td><td colspan="2">Taobao</td><td colspan="2">IJCAI</td></tr><tr><td>HR@5</td><td>NDGC@5</td><td>HR@5</td><td>NDGC@5</td></tr><tr><td>w/o IDE</td><td>0.344</td><td>0.266</td><td>0.313</td><td>0.239</td></tr><tr><td>BERT4Rec-MB</td><td>0.209</td><td>0.170</td><td>0.241</td><td>0.179</td></tr><tr><td>w/o interaction-level</td><td>0.347</td><td>0.266</td><td>0.318</td><td>0.239</td></tr><tr><td>w/o item-level</td><td>0.353</td><td>0.272</td><td>0.325</td><td>0.244</td></tr><tr><td>MB-GCN</td><td>0.185</td><td>0.103</td><td>0.218</td><td>0.145</td></tr><tr><td>NMTR</td><td>0.125</td><td>0.082</td><td>0.109</td><td>0.076</td></tr><tr><td>MB-GMN</td><td>0.192</td><td>0.108</td><td>0.235</td><td>0.161</td></tr><tr><td>w/o behavior-level</td><td>0.358</td><td>0.279</td><td>0.330</td><td>0.250</td></tr><tr><td>MB-STR</td><td>0.309</td><td>0.248</td><td>0.310</td><td>0.236</td></tr><tr><td>w/o MSPG</td><td>0.316</td><td>0.252</td><td>0.312</td><td>0.237</td></tr><tr><td>w/o coarse-grained</td><td>0.327</td><td>0.261</td><td>0.307</td><td>0.240</td></tr><tr><td>w/o fine-grained</td><td>0.353</td><td>0.284</td><td>0.325</td><td>0.243</td></tr><tr><td>w/o MGMHSA</td><td>0.340</td><td>0.263</td><td>0.318</td><td>0.239</td></tr><tr><td>MBHT</td><td>0.320</td><td>0.253</td><td>0.306</td><td>0.238</td></tr><tr><td>w/o Multi-order</td><td>0.337</td><td>0.261</td><td>0.309</td><td>0.240</td></tr><tr><td>w/o MaxPooling</td><td>0.301</td><td>0.244</td><td>0.296</td><td>0.224</td></tr></table>
+
+4.1.3 Baselines. To comprehensively demonstrate our proposed M-GPT model, we compare our M-GPT with various recommendation baselines. The details of baselines are shown in Appendix C.
+
+4.1.4 Parameter settings. We implement our proposed model M-GPT using Pytorch. We search the number of interaction-level multi-behavior dependency from1,2,3,4. For comparing equity, we refine the parameter setting of each model to get the best performance. We set the max sequence length \( N \) to 200 for all of the models. For M-GPT, We select the number of divided sessions \( {t}_{1},{t}_{2} \) from \( \{ \left\lbrack  {2,{10}}\right\rbrack  ,\left\lbrack  {2,{20}}\right\rbrack  ,\left\lbrack  {4,{10}}\right\rbrack  ,\left\lbrack  {4,{20}}\right\rbrack  \} \) and the number of preference granularity \( \left\lbrack  {{q}_{m1},{q}_{m2}}\right\rbrack \) from \( \{ \left\lbrack  {{20},2}\right\rbrack  ,\left\lbrack  {{20},4}\right\rbrack  ,\left\lbrack  {{10},2}\right\rbrack  ,\left\lbrack  {{10},4}\right\rbrack  \} \) . We set hy-perparameters \( {\theta }_{1},{\theta }_{2} \) as 1e-5 and learning rate as 0.001 . Meanwhile, we set training batch size to 64 for Taobao, Retail and 24 for IJCAI.
+
+### 4.2 Model Comparison
+
+We conduct comprehensive comparison experiments among M-GPT and all baselines on Taobao, IJCAI and Retailrocket. We report the result on three datasets in Table1. As illustrated in the table, we can conclude: (1)Multi-behavior information promotes recommendation results. As shown in result table, the model utilizing multi-behavior information generally get a better performance on three datasets than those don't, which prove the benefits of considering multi-behavior information. (2)Merging sequential method with graph technology promotes user preference modeling. MBHT use multi-scale transformer and hypergrah in a parallel style to encode the sequential pattern and multi-behavior dependencies. Meanwhile, our M-GPT merge transformer with graph technology in a sequential style. Both models show their superiority when compared with models using single technology. (3)Learning multi-behavior dependency at interaction-level contribute to recommendation. As shown in table 2, M-GPT outperforms the MB-STR, NMTR, MB-GCN and MB-GMN which learn multi-behavior dependency at behavior-level or item-level.(4)M-GPT shows its effectiveness for MBSR problem. As depicted in result table, M-GPT outperforms all the baselines in terms of all metrics and we summarize the advantage. First, compared with existing multi-behavior recommendation methods, M-GPT learns multi-order interaction-level dependencies which models complex correlations at various orders. Moreover, compared with transformer-based methods, our M-GPT learns the interaction-aware sequential pattern enhanced with capturing multi-grained user preference in different time scales, which further contributes to multifaceted sequential pattern learning.
+
+### 4.3 Ablation Study
+
+We have two key modules in our proposed M-GPT including: 1) Interaction-aware Dependency Extractor; 2) Multifaceted Sequential Pattern Generator. Investigating the effectiveness of them is essential for evaluating our model. Meanwhile, we create some variants of M-GPT to further prove the superiority of our design:
+
+![7_179_254_1441_225_0.jpg](images/7_179_254_1441_225_0.jpg)
+
+Figure 3: case study on attention map
+
+![7_193_557_638_241_0.jpg](images/7_193_557_638_241_0.jpg)
+
+Figure 4: behavioral sequential pattern in Taobao
+
+- M-GPT w/o IDE: The interaction-aware dependency extractor is replaced by plain item and behavior embedding layer.
+
+- M-GPT w/o MSPG: This model variant removes multifaceted sequential pattern generator and simply use plain transformer to encode sequential pattern.
+
+- M-GPT \( w/o \) interaction-level: In this variant, the adjacent matrix in IDE is replaced by fully connected adjacent matrix.
+
+- M-GPT w/o item-level: In this variant, the adjacent matrix is computed by the product of behavior-level representation \( {B}_{i, j} \) and transformation vector \( {W}_{i} \in  {\mathbb{R}}^{d} \) .
+
+- M-GPT \( w/o \) behavior-level: In this variant, the adjacent matrix is computed by the product of item-level representation \( {E}_{i, j} \) and transformation vector \( {W}_{b} \in  {\mathbb{R}}^{d} \) .
+
+- M-GPT \( w/o \) coarse-grained: In this variant, we just merge global sequential pattern with coarse-grained preference.
+
+- M-GPT \( w/o \) fine-grained: In this variant, we just we just merge global sequential pattern with fine-grained preference.
+
+- M-GPT w/o MGMHSA: we replace the multi-grained multi-head self-attention with vanilla multi-head self-attention.
+
+- M-GPT w/o Multi-order: we replace the multi-order multi-behavior dependency by second order output of IDE.
+
+- M-GPT w/o MaxPooling: We replace the predicting method with attention-weighted sum to corporate the multi-order outputs.
+
+We present the results in table3, where we can observe that:(1) Each of the two key components contributes to recommendation performance. As shown in the table 3, there exist a significant performance degradation when M-GPT removes each of its' two key component. (2) Ablation study shows the effectiveness of learning multi-behavior dependency at interaction-level. For IDE, we conduct detailed experiments on three model variants including M-GPT \( w/o \) interaction-level, M-GPT \( w/o \) item-level and M-GPT \( w/o \) behavior-level. The results show the gap of performance between interaction-level dependency learning with other variants. (3) Learning multi-grained preference in various time-grained sessions is essential. For MSPG, we conduct three detailed experiments including M-GPT \( w/o \) coarse-grained, M-GPT \( w/o \) fine-grained and M-GPT \( w/o \) MGMHSA. The results show the effectiveness of proposed MGMHSA in different time granularity. (4) Maxpooling is a better method to fuse representations in different orders. We replace the maxpooling with attention-weighted sum resulting in performance degradation.
+
+![7_1032_560_513_406_0.jpg](images/7_1032_560_513_406_0.jpg)
+
+Figure 5: scores in multi-order dependency
+
+### 4.4 Behavioral Sequential Pattern Analysis
+
+To investigate the ability of learning users' diverse behavioral sequential pattern, we conduct comprehensive experiment on Taobao dataset. Specifically, we analyze specific sequences from the historical interactions of user89 and user2035. Figure 4 illustrates three 4x4 matrices calculated by the average of attention weights in global sequential pattern. Specifically, we treat behavior pairs and their reversed order (e.g. click-purchase and purchase-click) as different patterns considering various sequential encoding. As shown in figure 5, we can observe the following: 1) Users' behavior patterns vary according to their personal shopping habits. For instance, from figure 5 we can infer that user89 prefers to tag items as favorites before purchasing them. However, it appears that user2035 has no clear preference before making a purchase. 2) In the Taobao dataset, Page-view is the most important behavior. In figure 5 Taobao behavior pattern, Page-view has the highest relevance scores with all the other behaviors, which aligns with the common understanding that Page-view provides the first impression of items to users and triggers them to perform the next behavior.
+
+### 4.5 Exploratory Case Study
+
+To offer an intuitive impression of our model interpretability, we conduct comprehensive case studies on Taobao, IJCAI and Retail dataset. We randomly select 100 items as candidate items for each datasets respectively. First, we study the attention map in case study. As figure 3 depicted, we show the multi-grained attention maps of two attention heads from two sequential sessions in Taobao and IJCAI datasets. It's obvious that the multi-grained preference in each session can be well captured by various query in specific granularity. At last, we investigate the average scores on 100 candidate items from different multi-behavior dependency orders. We show the results in three datasets in figure 5 . In conclusion, we find that learning multi-behavior dependency in different orders truly influences the recommendation performance. Specifically, for Taobao dataset, it's more efficient to capture multi-behavior dependency at 2nd-order. Nevertheless, it seems that there is no notable gap in model performance at multi-order multi-behavior dependency for IJCAI and retail dataset. Moreover, we perform exploratory case study on mulit-behavior dependency in Appendix E.
+
+## 5 CONCLUSION
+
+In this paper, we propose a novel model M-GPT for multi-behavior sequential recommendation problem. In interaction-level dependency extractor, we leverage graph-based method to learn the correlations among interactions from item-view and behavior-view information. In multifaceted sequential pattern generator, we learn sequential pattern of user interaction sequence by linear self-attention mechanism and extract multi-grained user preference in different time scales to enrich the representation of sequential pattern. At last, we conduct comprehensive experiments on two public datasets verifying the effectiveness of our proposed M-GPT compared with some state-of-the-art methods. In the future, we aim to explore the capability of Graph Foundation Model (GFM) in Recommendation.
+
+## REFERENCES
+
+[1] Jianxin Chang, Chen Gao, Yu Zheng, Yiqun Hui, Yanan Niu, Yang Song, Depeng Jin, and Yong Li. 2021. Sequential recommendation with graph neural networks. In Proceedings of the 44th international ACM SIGIR conference on research and development in information retrieval. 378-387.
+
+[2] Qian Chen, Zhiqiang Guo, Jianjun Li, and Guohui Li. 2023. Knowledge-enhanced Multi-View Graph Neural Networks for Session-based Recommendation. In Proceedings of the 46th International ACM SIGIR Conference on Research and Development in Information Retrieval. 352-361.
+
+[3] Yuhang Cheng, Yongquan Fan, Yitong Wang, and Xianyong Li. 2023. Accurate multi-interest modeling for sequential recommendation with attention and distillation capsule network. Expert Systems with Applications (2023), 122887.
+
+[4] Junsu Cho, Dongmin Hyun, Dong won Lim, Hyeon jae Cheon, Hyoung-iel Park, and Hwanjo Yu. 2023. Dynamic multi-behavior sequence modeling for next item recommendation. In Proceedings of the AAAI Conference on Artificial Intelligence, Vol. 37. 4199-4207.
+
+[5] Chen Gao, Xiangnan He, Dahua Gan, Xiangning Chen, Fuli Feng, Yong Li, Tat-Seng Chua, and Depeng Jin. 2019. Neural multi-task recommendation from multi-behavior data. In 2019 IEEE 35th international conference on data engineering (ICDE). IEEE, 1554-1557.
+
+[6] Ehsan Gholami, Mohammad Motamedi, and Ashwin Aravindakshan. 2022. PARSRec: Explainable personalized attention-fused recurrent sequential recommendation using session partial actions. In Proceedings of the 28th ACM SIGKDD Conference on Knowledge Discovery and Data Mining. 454-464.
+
+[7] Yulong Gu, Zhuoye Ding, Shuaiqiang Wang, Lixin Zou, Yiding Liu, and Dawei Yin. 2020. Deep multifaceted transformers for multi-objective ranking in large-scale e-commerce recommender systems. In Proceedings of the 29th ACM International Conference on Information & Knowledge Management. 2493-2500.
+
+[8] Yongqiang Han, Hao Wang, Kefan Wang, Likang Wu, Zhi Li, Wei Guo, Yong Liu, Defu Lian, and Enhong Chen. 2024. Efficient Noise-Decoupling for Multi-Behavior Sequential Recommendation. In Proceedings of the ACM on Web Conference 2024. 3297-3306.
+
+[9] Xiangnan He, Kuan Deng, Xiang Wang, Yan Li, Yongdong Zhang, and Meng Wang. 2020. Lightgen: Simplifying and powering graph convolution network for recommendation. In Proceedings of the 43rd International ACM SIGIR conference on research and development in Information Retrieval. 639-648.
+
+[10] Chao Huang, Jiahui Chen, Lianghao Xia, Yong Xu, Peng Dai, Yanqing Chen, Liefeng Bo, Jiashu Zhao, and Jimmy Xiangji Huang. 2021. Graph-enhanced multi-task learning of multi-level transition dynamics for session-based recommendation. In Proceedings of the AAAI conference on artificial intelligence, Vol. 35. 4123-4130.
+
+[11] Dietmar Jannach and Malte Ludewig. 2017. When recurrent neural networks meet the neighborhood for session-based recommendation. In Proceedings of the eleventh ACM conference on recommender systems. 306-310.
+
+[12] Bowen Jin, Chen Gao, Xiangnan He, Depeng Jin, and Yong Li. 2020. Multi-behavior recommendation with graph convolutional networks. In Proceedings of the 43rd International ACM SIGIR Conference on Research and Development in Information Retrieval. 659-668.
+
+[13] Taegwan Kang, Hwanhee Lee, Byeongjin Choe, and Kyomin Jung. 2021. Entangled bidirectional encoder to autoregressive decoder for sequential recommendation. In Proceedings of the 44th International ACM SIGIR Conference on Research and Development in Information Retrieval. 1657-1661.
+
+[14] Wang-Cheng Kang and Julian McAuley. 2018. Self-attentive sequential recommendation. In 2018 IEEE international conference on data mining (ICDM). IEEE, 197-206.
+
+[15] Jiacheng Li, Yujie Wang, and Julian McAuley. 2020. Time interval aware self-attention for sequential recommendation. In Proceedings of the 13th international conference on web search and data mining. 322-330.
+
+[16] Zhi Li, Hongke Zhao, Qi Liu, Zhenya Huang, Tao Mei, and Enhong Chen. 2018. Learning from history and present: Next-item recommendation via discriminatively exploiting user behaviors. In Proceedings of the 24th ACM SIGKDD international conference on knowledge discovery & data mining. 1734-1743.
+
+[17] Guanyu Lin, Chen Gao, Yinfeng Li, Yu Zheng, Zhiheng Li, Depeng Jin, and Yong Li. 2022. Dual contrastive network for sequential recommendation. In Proceedings of the 45th international ACM SIGIR conference on research and development in information retrieval. 2686-2691.
+
+[18] Langming Liu, Liu Cai, Chi Zhang, Xiangyu Zhao, Jingtong Gao, Wanyu Wang, Yifu Lv, Wenqi Fan, Yiqi Wang, Ming He, et al. 2023. Linrec: Linear attention mechanism for long-term sequential recommender systems. In Proceedings of the 46th International ACM SIGIR Conference on Research and Development in Information Retrieval. 289-299.
+
+[19] Jinwei Luo, Mingkai He, Xiaolin Lin, Weike Pan, and Zhong Ming. 2022. Dual-task learning for multi-behavior sequential recommendation. In Proceedings of the 31st ACM international conference on information & knowledge management. 1379-1388.
+
+[20] Erxue Min, Yu Rong, Tingyang Xu, Yatao Bian, Da Luo, Kangyi Lin, Junzhou Huang, Sophia Ananiadou, and Peilin Zhao. 2022. Neighbour interaction based click-through rate prediction via graph-masked transformer. In Proceedings of the 45th International ACM SIGIR Conference on Research and Development in
+
+[21] Ruihong Qiu, Zi Huang, and Hongzhi Yin. 2021. Memory augmented multi-instance contrastive predictive coding for sequential recommendation. In 2021 IEEE International Conference on Data Mining (ICDM). IEEE, 519-528.
+
+[22] Kan Ren, Jiarui Qin, Yuchen Fang, Weinan Zhang, Lei Zheng, Weijie Bian, Guorui Zhou, Jian Xu, Yong Yu, Xiaoqiang Zhu, et al. 2019. Lifelong sequential modeling with personalized memorization for user response prediction. In Proceedings of the 42nd International ACM SIGIR Conference on Research and Development in Information Retrieval. 565-574.
+
+[23] Jiajie Su, Chaochao Chen, Zibin Lin, Xi Li, Weiming Liu, and Xiaolin Zheng. 2023. Personalized behavior-aware transformer for multi-behavior sequential recommendation. In Proceedings of the 31st ACM International Conference on Multimedia. 6321-6331.
+
+[24] Fei Sun, Jun Liu, Jian Wu, Changhua Pei, Xiao Lin, Wenwu Ou, and Peng Jiang. 2019. BERT4Rec: Sequential recommendation with bidirectional encoder representations from transformer. In Proceedings of the 28th ACM international conference on information and knowledge management. 1441-1450.
+
+[25] Jiaxi Tang and Ke Wang. 2018. Personalized top-n sequential recommendation via convolutional sequence embedding. In Proceedings of the eleventh ACM international conference on web search and data mining. 565-573.
+
+[26] Yu Tian, Jianxin Chang, Yanan Niu, Yang Song, and Chenliang Li. 2022. When multi-level meets multi-interest: A multi-grained neural model for sequential recommendation. In Proceedings of the 45th International ACM SIGIR Conference on Research and Development in Information Retrieval. 1632-1641.
+
+[27] Jianling Wang, Kaize Ding, Liangjie Hong, Huan Liu, and James Caverlee. 2020. Next-item recommendation with sequential hypergraphs. In Proceedings of the 43rd international ACM SIGIR conference on research and development in information retrieval. 1101-1110.
+
+[28] Shoujin Wang, Liang Hu, Yan Wang, Longbing Cao, Quan Z Sheng, and Mehmet Orgun. 2019. Sequential recommender systems: challenges, progress and prospects. arXiv preprint arXiv:2001.04830 (2019).
+
+[29] Xiting Wang, Kunpeng Liu, Dongjie Wang, Le Wu, Yanjie Fu, and Xing Xie. 2022. Multi-level recommendation reasoning over knowledge graphs with reinforcement learning. In Proceedings of the ACM Web Conference 2022. 2098-2108.
+
+[30] Wei Wei, Chao Huang, Lianghao Xia, Yong Xu, Jiashu Zhao, and Dawei Yin. 2022. Contrastive meta learning with behavior multiplicity for recommendation. In Proceedings of the fifteenth ACM international conference on web search and data mining. 1120-1128.
+
+[31] Binquan Wu, Yu Cheng, Haitao Yuan, and Qianli Ma. 2024. When Multi-Behavior Meets Multi-Interest: Multi-Behavior Sequential Recommendation with Multi-Interest Self-Supervised Learning. In 2024 IEEE 40th International Conference on Data Engineering (ICDE). IEEE, 845-858.
+
+[32] Shu Wu, Yuyuan Tang, Yanqiao Zhu, Liang Wang, Xing Xie, and Tieniu Tan. 2019. Session-based recommendation with graph neural networks. In Proceedings of the AAAI conference on artificial intelligence, Vol. 33. 346-353.
+
+[33] Lianghao Xia, Chao Huang, Yong Xu, and Jian Pei. 2022. Multi-behavior sequential recommendation with temporal graph transformer. IEEE Transactions on Knowledge and Data Engineering (2022).
+
+[34] Lianghao Xia, Yong Xu, Chao Huang, Peng Dai, and Liefeng Bo. 2021. Graph meta network for multi-behavior recommendation. In Proceedings of the 44th international ACM SIGIR conference on research and development in information retrieval. 757-766.
+
+[35] Chengfeng Xu, Pengpeng Zhao, Yanchi Liu, Victor S Sheng, Jiajie Xu, Fuzhen Zhuang, Junhua Fang, and Xiaofang Zhou. 2019. Graph contextualized self-attention network for session-based recommendation.. In IJCAI, Vol. 19. 3940- 3946.
+
+[36] Yuhao Yang, Chao Huang, Lianghao Xia, Yuxuan Liang, Yanwei Yu, and Chen-liang Li. 2022. Multi-behavior hypergraph-enhanced transformer for sequential recommendation. In Proceedings of the 28th ACM SIGKDD conference on knowledge discovery and data mining. 2263-2274.
+
+[37] Xin-Wei Yao, Chuan He, Wei-Wei Xing, Qi-Chao Lu, Xin-Ge Zhang, and Yu-Chen Zhang. 2023. DDIN: Deep Disentangled Interest Network for Click-Through Rate Prediction. In 2023 International Joint Conference on Neural Networks (IJCNN). IEEE, 1-8.
+
+[38] Yaowen Ye, Lianghao Xia, and Chao Huang. 2023. Graph Masked Autoencoder for Sequential Recommendation. arXiv preprint arXiv:2305.04619 (2023).
+
+[39] Bo Yu, Ruoqian Zhang, Wei Chen, and Junhua Fang. 2022. Graph neural network based model for multi-behavior session-based recommendation. GeoInformatica 26, 2 (2022), 429-447.
+
+[40] Enming Yuan, Wei Guo, Zhicheng He, Huifeng Guo, Chengkai Liu, and Ruiming Tang. 2022. Multi-behavior sequential transformer recommender. In Proceedings of the 45th international ACM SIGIR conference on research and development in information retrieval. 1642-1652.
+
+[41] Hengyu Zhang, Enming Yuan, Wei Guo, Zhicheng He, Jiarui Qin, Huifeng Guo, Bo Chen, Xiu Li, and Ruiming Tang. 2022. Disentangling Past-Future Modeling in Sequential Recommendation via Dual Networks. In Proceedings of the 31st ACM International Conference on Information & Knowledge Management. 2549-2558.
+
+[42] Peiyan Zhang, Jiayan Guo, Chaozhuo Li, Yueqi Xie, Jae Boum Kim, Yan Zhang, Xing Xie, Haohan Wang, and Sunghun Kim. 2023. Efficiently leveraging multilevel user intent for session-based recommendation via atten-mixer network. In Proceedings of the Sixteenth ACM International Conference on Web Search and Data Mining. 168-176.
+
+[43] Weifeng Zhang, Jingwen Mao, Yi Cao, and Congfu Xu. 2020. Multiplex graph neural networks for multi-behavior recommendation. In Proceedings of the 29th ACM international conference on information & knowledge management. 2313- 2316.
+
+[44] Guorui Zhou, Na Mou, Ying Fan, Qi Pi, Weijie Bian, Chang Zhou, Xiaoqiang Zhu, and Kun Gai. 2019. Deep interest evolution network for click-through rate prediction. In Proceedings of the AAAI conference on artificial intelligence, Vol. 33. 5941-5948.
+
+[45] Guorui Zhou, Xiaoqiang Zhu, Chenru Song, Ying Fan, Han Zhu, Xiao Ma, Yanghui Yan, Junqi Jin, Han Li, and Kun Gai. 2018. Deep interest network for click-through rate prediction. In Proceedings of the 24th ACM SIGKDD international conference on knowledge discovery & data mining. 1059-1068.
+
+[46] Xiangmin Zhou, Dong Qin, Xiaolu Lu, Lei Chen, and Yanchun Zhang. 2019. Online social media recommendation over streams. In 2019 IEEE 35th International Conference on Data Engineering (ICDE). IEEE, 938-949.
+
+## A THE LEARNING PROCESS OF M-GPT
+
+Algorithm 1 : The forward propagation flow of M-GPT
+
+---
+
+Input: The item sequence \( e \) and corresponding behavior sequence
+
+		\( b \) for user \( u \) with mask tokens at position \( I \) and with true labels
+
+		\( T \) .
+
+Output: The estimated likelihood of user \( {u}_{i} \) engaging with ground-
+
+			truth items \( T \) at specific time step positions \( I \) .
+
+		Interaction-Level Multi-Behavior Dependency Extraction;
+
+		Construct interaction-level fully connected graph \( {\mathcal{G}}_{{s}_{i}} \) and com-
+
+		pute the adjacent matrix \( \mathcal{A} \) :
+
+			\( {\mathcal{A}}_{i, j} \leftarrow  {E}_{i, j} \cdot  {B}_{i, j},{E}_{i, j} \leftarrow  {e}_{i} \odot  {e}_{j},{B}_{i, j} \leftarrow  {b}_{i} \odot  {b}_{j}; \)
+
+		3: Perform graph convolution on constructed graph to get multi-
+
+		order dependency representations:
+
+			\( {H}^{\left( l\right) } \leftarrow \) LeakyReLU \( \left( {{\widetilde{D}}^{-\frac{1}{2}}\widetilde{\mathcal{A}}{\widetilde{D}}^{-\frac{1}{2}}{H}^{\left( l - 1\right) }W}\right) \) ;
+
+		Multifaceted Sequential Pattern Generator;
+
+		: Inject sequential information into multifaceted transformer
+
+		inputs:
+
+		\( {H}^{\left( l\right) } \leftarrow  \left\lbrack  {{h}_{0}^{\left( l\right) } \oplus  {p}_{0},\ldots ,{h}_{N - 1}^{\left( l\right) } \oplus  {p}_{N - 1}}\right\rbrack  ; \)
+
+		Perform linear self-attention layer to generate global sequential
+
+			pattern according to equation 10-12:
+
+		\( {H}_{\text{ Lin }}^{\left( l\right) } \leftarrow  \operatorname{LinSA}\left( {H}^{\left( l\right) }\right) \)
+
+	7: Perform multi-grained multi-head self-attention layer to gen-
+
+			erate multi-grained preference representation at different time
+
+			granularity according to equation 13-19:
+
+		\( {S}_{t}^{\left( l\right) } \leftarrow  \operatorname{MGMHSA}\left( {H}^{\left( l\right) }\right) \)
+
+	8: Perform projection matrix to fuse multifaceted patterns:
+
+		\( \widetilde{{H}^{\left( l\right) }} \leftarrow  \left( {{H}_{\text{ Lin }}^{\left( l\right) }\begin{Vmatrix}\widetilde{{S}_{{t}_{1}}^{\left( l\right) }}\end{Vmatrix}\widetilde{{S}_{{t}_{2}}^{\left( l\right) }}}\right) {W}^{d}; \)
+
+		Perform point-wise feed-forward to inject non-linearity:
+
+			\( {\widetilde{{H}^{\left( l\right) }}}^{n} \leftarrow  \operatorname{LayerNorm}\left( {{\widetilde{{FFN}\left( {H}^{\left( l\right) }\right) }}^{n - 1} + {\widetilde{{H}^{\left( l\right) }}}^{n - 1}}\right) \) ;
+
+		Maxpooling Prediction;
+
+			for each \( i \in  I, t \in  T \) do
+
+				for \( m \in  \left\lbrack  {1, l}\right\rbrack \) do
+
+					Compute the probability of item at \( m \) being \( {v}_{t} \) under \( m \) -th
+
+					order:
+
+					\( {g}_{i, t}^{\left( m\right) } \leftarrow  {\widetilde{{H}^{\left( m\right) }}}_{i}^{n}{e}_{t} \)
+
+				end for
+
+				Perform maxpooling to search best performance:
+
+				\( \widetilde{{p}_{i, t}} \leftarrow  \operatorname{MaxPooling}\left( {{g}_{i, t}^{\left( 1\right) },\ldots ,{g}_{i, t}^{\left( l\right) }}\right) ; \)
+
+		end for
+
+		return \( \left\lbrack  {{p}_{{i}_{1},{t}_{1}},{p}_{{i}_{2},{t}_{2}},\ldots }\right\rbrack \) ;
+
+---
+
+## B TIME COMPLEXITY ANALYSIS
+
+This section conducts the time complexity analysis of our M-GPT. For the interaction-level dependency extractor, the computation of adjacent matrix \( \mathcal{A} \) and graph convolution both take \( O\left( {N{d}^{2}}\right) \) . For multifaceted sequential pattern generator, the deployment of linear self-attention layer reduce the time complexity of global sequential pattern extraction from \( O\left( {{N}^{2}d}\right) \) to \( O\left( {N{d}^{2}}\right) \left( {N >  > d}\right) \) and time-aware multi-grained preference encoding take \( O\left( {t \times  {q}_{m} \times  }\right. \; \left. {\frac{N}{t} \times  d}\right) \) , where \( t \) represents number of sessions and \( {q}_{m} \) represents preference granularity. Thus, the overall time complexity of M-GPT is \( O\left( {\left( {l + 1}\right) N{d}^{2} + l\left( {N{d}^{2} + \left( {{q}_{{m}_{1}} + {q}_{{m}_{2}}}\right) {Nd}}\right) }\right) \) , where \( l \) represents the dependency order and \( N \) is the max length of each sequences. Based on above discussion, we drop the constant factors in the computation of time complexity and get \( O\left( {N{d}^{2} + {Nd}}\right) \) which is comparable to some SOTA models.
+
+## C DETAILS OF BASELINES
+
+- GRU4Rec[11]. It uses the gated recurrent unit to encode sequential information.
+
+- SASRec[14]. It encodes the item-wise sequential relations by self-attention mechanism.
+
+- Caser[25]. This methods encode the time-evolving user preference by utilizing convolutional neural layers from both vertical and horizontal views.
+
+- HPMN[22]. It utilizes a time-evovling hierarchical memory network to model multi-scale transitional information of sequential behaviors.
+
+BERT4Rec[24]. A bidirectional encoder is used for modeling sequential information with Transformer. And the Cloze objective is utilized to optimize the model training.
+
+- SR-GNN[32]. It generates an item-item graph to perform graph-based message passing to capture local and global user preference.
+
+- GCSAN[35]. It aggregate the self-attention mechanism with GNN structure to better encode graph embedding.
+
+- HyperRec[27]. sequential hypergraphs are used to capture users' dynamic interests.
+
+- SURGE[1]. Metric learning is used to construct personalized graphs and hierarchical attention is utilized for extracting multidimensional user interets in the graph.
+
+- BERT4Rec-MB[24]. We follow the work in MBHT to enhance the BERT4Rec with injecting the behavior type representations into input embedding.
+
+- MB-GCN[12]. Graph convolutional layer is used to enhance the user/item embedding through behavior-aware message passing on the user-item interaction graph.
+
+- NMTR[5]. It utilizes a multi-task learning paradigm to model the dependency among different types of behaviors through the behavior-wise cascading relationships.
+
+- MB-GMN[34]. A graph meta network is used to capture personalized multi-behavior dependency.
+
+- NextIP[19]. A Transformer based model that divides the problem into two subtasks: next-item prediction and purchase prediction
+
+- MB-STR[40]. It proposes a multi-behavior transformer framework to model the fine-grained multi-behavior dependency at item level.
+
+- MBHT[36]. It proposes a multi-scale transformer enhanced with hypergraphs to capture behavior-aware sequential patterns.
+
+- DyMuS+[4]. An enhanced version of DyMuS, where the dynamic GRU constructs its internal hidden states as capsules to further capture item-level correlations.
+
+- TGT[33]. A multi-behavior SRS that captures short-term user interests with a behavior-aware transformer network and long-term user interests via a temporal graph neural network.
+
+![11_203_248_1391_805_0.jpg](images/11_203_248_1391_805_0.jpg)
+
+Figure 6: Hyper-parameter analysis on Taobao, IJCAI and RetailRocket
+
+- PBAT[23]. A transformer-based model that explores personalized multi-behavior patterns and multifaceted time-evolving collaborations for MBSR problem.
+
+- MISSL[31]. It proposes a multi-interest self-supervised learning including a behavior-aware multi-interest encoder and intra-and inter-interest self-supervised learning.
+
+- END4Rec[8]. It efficiently captures intricate patterns in user behavior by eliminating noise from user behavior data through noise-decoupling contrastive learning and a guided training strategy.
+
+## D HYPER-PARAMETER ANALYSIS
+
+To evaluate the effectiveness of M-GPT with different settings of hyper-parameters, we conduct a comprehensive experiments on four types of hyper-parameters including Mask Ratio, Number of Dependency Level, Number of session and Number of Preference Granularity.
+
+- Mask Ratio \( \rho \) . Mask ratio controls proportion of items used as prediction target in sequences. Figure 6a, 6e and 6i show the performance of M-GPT when the mask ratio changes from 0.1 to 0.5 on three datasets. The performance first improves and degrades at last. We can observe that M-GPT achieve best performance on three datasets when the value of mask ratio is 0.2 .
+
+- Dependency Order \( l \) . The order of interaction-level dependency representations indicates the complexity of personalized behavior pattern. We change the values of level from 1 to 4 for searching the best set of level value. As illustrated in figure 6b, 6f and 6j, M-GPT reaches the best performance when the value of order is 3 for Taobao, IJCAI and Retail.
+
+- Number of Session \( \left\lbrack  {{t}_{1},{t}_{2}}\right\rbrack \) . To enhance the representation of sequential pattern, we intend to learn local multi-grained preference in different time scales. For the consideration of time complexity, we conduct experiments on two datasets for the different time scale setting including \( \left\lbrack  {2,{10}}\right\rbrack  ,\left\lbrack  {2,{20}}\right\rbrack  ,\left\lbrack  {4,{10}}\right\rbrack \) and \( \left\lbrack  {4,{20}}\right\rbrack \) . Meanwhile, we fix the number of preference granularity to \( \left\lbrack  {{10},2}\right\rbrack \) . As shown in figure \( 6\mathrm{c},6\mathrm{\;g} \) and \( 6\mathrm{k} \) , we observe that the values of HIT@5 and NDGC@5 achieve best performance when the settings are \( \left\lbrack  {4,{20}}\right\rbrack \) for Taobao and \( \left\lbrack  {4,{10}}\right\rbrack \) for IJCAI, retail.
+
+- Preference Granularity \( \left\lbrack  {{q}_{m1},{q}_{m2}}\right\rbrack \) .To better model users’ local preference, we leverage multi-grained attention mechanism by aggregating query representations. We choose the value of preference granularity for each time scale from \( \left\lbrack  {{20},2}\right\rbrack  ,\left\lbrack  {{20},4}\right\rbrack \) , \( \left\lbrack  {{10},2}\right\rbrack \) and \( \left\lbrack  {{10},4}\right\rbrack \) . Then we fix the value of session as \( \left\lbrack  {4,{10}}\right\rbrack \) and conduct experiments on three datasets. We observe that the best settings of preference granularity are \( \left\lbrack  {{10},2}\right\rbrack \) for Taobao and \( \left\lbrack  {{10},4}\right\rbrack \) for IJCAI, retail.
+
+In conclusion, after conducting comprehensive experiments on Taobao, IJCAI and RetailRocket, we find the best setting of hyper-parameter to make M-GPT reach its' best performance. Specifically, we set mask ratio \( \rho \) as 0.2, dependency level \( l \) as 3, number of session \( \left\lbrack  {{t}_{1},{t}_{2}}\right\rbrack \) as \( \left\lbrack  {4,{20}}\right\rbrack \) for Taobao and \( \left\lbrack  {4,{10}}\right\rbrack \) for IJCAI, Retail and preference granularity \( \left\lbrack  {{q}_{{m}_{1}},{q}_{{m}_{2}}}\right\rbrack \) as \( \left\lbrack  {{10},2}\right\rbrack \) for Taobao and \( \left\lbrack  {{10},4}\right\rbrack \) for IJCAI, Retail respectively. The difference from the setting of number of sessions and preference granularity may be induced by the sparsity of interaction sequence in three different datasets.
+
+![12_277_252_1250_977_0.jpg](images/12_277_252_1250_977_0.jpg)
+
+Figure 8: case study on interaction-level multi-behavior dependency
+
+## E MULTI-BEHAVIOR DEPENDENCY ANALYSIS
+
+### E.1 Behavioral Relationship
+
+We present the \( 4 \times  4 \) behavioral relationship matrices for MBHT and M-GPT across two datasets, calculated using the \( B{B}^{T} \) method. Based on these results, several key observations can be made: 1) The relational values between each pair of behaviors in M-GPT are significantly higher than those observed in MBHT. This underscores M-GPT's advantage in explicitly modeling dependencies at the behavior level, capturing multi-behavior interactions more effectively. 2) Specifically, the relational values for 'favorite-purchase' and 'add to cart-purchase' pairs in M-GPT are markedly higher compared to MBHT. Given that users are generally more inclined to purchase items they have favorited or added to their carts, these findings provide insight into the superior performance of M-GPT in reflecting real-world user behavior patterns. 3) In the IJCAI dataset, the relational scores for 'add to cart' interactions are notably low. This phenomenon could be attributed to the relatively sparse occurrence of 'add to cart' events within this dataset, suggesting that the frequency of specific behaviors may influence the strength of their detected relationships.
+
+In summary, the analysis of the behavioral relationship matrices highlights M-GPT's capability to better capture complex interdependencies among user behaviors. Furthermore, the lower relational scores for certain behaviors, such as 'add to cart', emphasize the importance of considering behavior frequency when interpreting model outcomes.
+
+### E.2 Interaction-Level Dependency
+
+We also present the incidence matrices of our interaction-level graph in Figure 8. These matrices encapsulate the values of interaction-level dependencies within users' historical sequences, calculated using equations (3)-(5). Several interesting observations can be drawn from these figures: 1) Both users exhibit strong long-term dependency interactions over time. 2) Short-term strong interaction-level dependencies are evident in both users' sequences, likely attributable to temporary deviations in user preferences. 3) Notably, User 23 demonstrates a more stable and stronger multi-behavior dependency at the interaction level compared to User 1, reflecting distinct shopping habits between the two users.
+
+These findings highlight the nuanced patterns of interaction-level dependencies, offering insights into the temporal dynamics and stability of user behaviors. The differences observed between the two users underscore the importance of considering individual behavioral characteristics when analyzing interaction data.
